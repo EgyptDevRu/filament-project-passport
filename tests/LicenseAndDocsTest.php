@@ -193,8 +193,8 @@ it('can bust the license cache', function () {
 
 it('rewrites internal markdown links for in-viewer navigation', function () {
     $docs = base_path('.docs');
-
-    File::makeDirectory($docs.'/guides', 0755, true);
+    File::deleteDirectory($docs);
+    File::ensureDirectoryExists($docs.'/guides');
     File::put($docs.'/index.md', "[Deploy](guides/deploy.md)\n\n[Missing](./nope.md)\n\n[External](https://example.com)");
     File::put($docs.'/guides/deploy.md', "# Deploy\n\n[Back](../index.md)");
 
@@ -216,9 +216,10 @@ it('rewrites internal markdown links for in-viewer navigation', function () {
 it('does not read markdown outside the configured docs directory via path prefix', function () {
     $docs = base_path('.docs');
     $evil = base_path('.docs-evil');
-
-    File::makeDirectory($docs, 0755, true);
-    File::makeDirectory($evil, 0755, true);
+    File::deleteDirectory($docs);
+    File::deleteDirectory($evil);
+    File::ensureDirectoryExists($docs);
+    File::ensureDirectoryExists($evil);
     File::put($docs.'/safe.md', '# Safe');
     File::put($evil.'/secret.md', '# Secret');
 
@@ -246,8 +247,8 @@ it('keeps the docs directory under the application root', function () {
 
 it('transforms mermaid fenced blocks into renderable diagram containers', function () {
     $docs = base_path('.docs');
-
-    File::makeDirectory($docs, 0755, true);
+    File::deleteDirectory($docs);
+    File::ensureDirectoryExists($docs);
     File::put($docs.'/diagrams.md', <<<'MD'
 # Diagrams
 
@@ -282,8 +283,8 @@ MD);
 
 it('builds a nested navigation tree for subfolders', function () {
     $docs = base_path('.docs');
-
-    File::makeDirectory($docs.'/API/nested', 0755, true);
+    File::deleteDirectory($docs);
+    File::ensureDirectoryExists($docs.'/API/nested');
     File::put($docs.'/00_index.md', '# Index');
     File::put($docs.'/API/01_overview.md', '# Overview');
     File::put($docs.'/API/nested/deep.md', '# Deep');

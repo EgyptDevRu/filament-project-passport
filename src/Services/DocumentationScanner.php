@@ -280,7 +280,14 @@ final class DocumentationScanner
         array $knownByRelative,
         string $currentRelative,
     ): void {
+        // Snapshot first — the live NodeList mutates when we replace anchors.
+        $anchors = [];
+
         foreach ($root->getElementsByTagName('a') as $node) {
+            $anchors[] = $node;
+        }
+
+        foreach ($anchors as $node) {
             /** @var DOMElement $anchor */
             $anchor = $node;
             $href = $anchor->getAttribute('href');
