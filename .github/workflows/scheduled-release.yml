@@ -7,6 +7,11 @@ name: Scheduled Release
 #   Friday slot  → create only if no release Tue–Fri
 #
 # Manual "Run workflow" — always creates a new patch release (forced).
+#
+# Before releasing, the full supported PHP/Laravel matrix is tested once each
+# with --prefer-stable (no --prefer-lowest — that drift-detection concern is
+# already covered continuously by the run-tests workflow on every push to
+# main, not re-checked again here) so a broken combination never ships.
 
 on:
   schedule:
@@ -22,10 +27,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Ensure scheduled release
+  gate:
+    name: Decide whether to release
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      should_release: ${{ steps.gate.outputs.should_release }}
+      slot: ${{ steps.gate.outputs.slot }}
+      window_start: ${{ steps.gate.outputs.window_start }}
+      window_end: ${{ steps.gate.outputs.window_end }}
 
     steps:
       - name: Checkout
@@ -128,9 +138,74 @@ jobs:
           echo "No release in window — will create one."
           echo "should_release=true" >> "${GITHUB_OUTPUT}"
 
+  test:
+    name: P${{ matrix.php }} - L${{ matrix.laravel }} - prefer-stable - ${{ matrix.os }}
+    needs: gate
+    if: needs.gate.outputs.should_release == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest]
+        php: [8.5, 8.4, 8.3]
+        laravel: [13.*, 12.*, 11.*]
+        include:
+          - laravel: 13.*
+            testbench: ^11.3
+          - laravel: 12.*
+            testbench: ^10.14
+          - laravel: 11.*
+            testbench: ^9.19
+        exclude:
+          - laravel: 11.*
+            php: 8.5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, fileinfo
+          coverage: none
+
+      - name: Setup problem matchers
+        run: |
+          echo "::add-matcher::${{ runner.tool_cache }}/php.json"
+          echo "::add-matcher::${{ runner.tool_cache }}/phpunit.json"
+
+      - name: Install dependencies
+        run: |
+          composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-interaction --no-update
+          composer update --prefer-stable --prefer-dist --no-interaction
+
+      - name: List Installed Dependencies
+        run: composer show -D
+
+      - name: Execute tests
+        run: vendor/bin/pest --ci
+
+  release:
+    name: Create GitHub release
+    needs: [gate, test]
+    if: needs.gate.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+
       - name: Compute next patch version
         id: version
-        if: steps.gate.outputs.should_release == 'true'
         run: |
           set -euo pipefail
 
@@ -153,16 +228,15 @@ jobs:
           echo "Next release tag: ${next} (previous: ${latest:-none})"
 
       - name: Create GitHub release
-        if: steps.gate.outputs.should_release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
           NEXT="${{ steps.version.outputs.next }}"
-          SLOT="${{ steps.gate.outputs.slot }}"
-          WINDOW_START="${{ steps.gate.outputs.window_start }}"
-          WINDOW_END="${{ steps.gate.outputs.window_end }}"
+          SLOT="${{ needs.gate.outputs.slot }}"
+          WINDOW_START="${{ needs.gate.outputs.window_start }}"
+          WINDOW_END="${{ needs.gate.outputs.window_end }}"
 
           NOTES="Automated ${SLOT} release (${WINDOW_END} UTC). Window ${WINDOW_START} → ${WINDOW_END}."
 

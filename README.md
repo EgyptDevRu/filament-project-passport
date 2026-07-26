@@ -19,7 +19,7 @@ Support status, documentation, and other studio-backed features only work when t
 ## Requirements
 
 - PHP 8.3+
-- Laravel 10 / 11 / 12+
+- Laravel 11 / 12 / 13+
 - Filament `^3.0` | `^4.0` | `^5.0`
 
 ## Installation
