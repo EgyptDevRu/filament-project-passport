@@ -3,6 +3,7 @@
 namespace EgyptDevRu\FilamentProjectPassport\Pages;
 
 use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\InteractsWithPassportNavigation;
+use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\LoadsPassportDataLazily;
 use EgyptDevRu\FilamentProjectPassport\Services\LicenseApiClient;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseErrorCode;
 use EgyptDevRu\FilamentProjectPassport\Support\SupportCoverage;
@@ -14,6 +15,7 @@ use Livewire\Attributes\Locked;
 class StatusPage extends Page
 {
     use InteractsWithPassportNavigation;
+    use LoadsPassportDataLazily;
 
     protected static ?string $slug = 'developer-support/status';
 
@@ -58,11 +60,6 @@ class StatusPage extends Page
         return 'Support Status';
     }
 
-    public function mount(): void
-    {
-        $this->loadLicense();
-    }
-
     /**
      * Developer payload.
      *
@@ -87,6 +84,7 @@ class StatusPage extends Page
     public function refreshLicenseCheck(): void
     {
         $this->license = app(LicenseApiClient::class)->refresh();
+        $this->ready = true;
 
         Notification::make()
             ->title('License cache cleared')
@@ -95,10 +93,29 @@ class StatusPage extends Page
             ->send();
     }
 
-    protected function loadLicense(): void
+    /**
+     * Prefer cache; cold miss fetches in the background and polls (never blocks Filament nav).
+     */
+    public function loadPageData(): void
     {
+        if ($this->ready) {
+            return;
+        }
+
+        $client = app(LicenseApiClient::class);
+        $cached = $client->cachedPayload();
+
+        if ($cached !== null) {
+            $this->license = $cached;
+            $this->ready = true;
+
+            return;
+        }
+
+        // Still try a short fetch on the Status page itself (user opened this page).
+        // Navigation elsewhere must not hit the API — see DocumentationPage::canAccess().
         try {
-            $this->license = app(LicenseApiClient::class)->fetch();
+            $this->license = $client->fetch();
         } catch (\Throwable $exception) {
             $this->license = [
                 'is_official' => false,
@@ -116,6 +133,13 @@ class StatusPage extends Page
                 'http_status' => null,
             ];
         }
+
+        $this->ready = true;
+    }
+
+    protected function hydratePassportData(): void
+    {
+        // Status overrides loadPageData() for cache-first behaviour.
     }
 
     /**

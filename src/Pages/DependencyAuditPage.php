@@ -3,6 +3,7 @@
 namespace EgyptDevRu\FilamentProjectPassport\Pages;
 
 use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\InteractsWithPassportNavigation;
+use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\ReleasesSessionEarly;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerDependencyAuditor;
 use EgyptDevRu\FilamentProjectPassport\Support\CheckAge;
 use Filament\Notifications\Notification;
@@ -12,6 +13,7 @@ use Livewire\Attributes\Locked;
 class DependencyAuditPage extends Page
 {
     use InteractsWithPassportNavigation;
+    use ReleasesSessionEarly;
 
     protected static ?string $slug = 'developer-support/dependency-audit';
 
@@ -21,10 +23,27 @@ class DependencyAuditPage extends Page
     #[Locked]
     public array $audit = [];
 
+    /**
+     * True while a background Composer audit is in progress.
+     * The page always renders immediately (empty/placeholder or cache).
+     */
+    public bool $scanning = false;
+
+    /**
+     * True after wire:init / refresh has asked for a background run.
+     * Used so polls can stop the spinner when the worker dies without writing cache.
+     */
+    public bool $refreshRequested = false;
+
     public string $search = '';
 
+    /**
+     * Only ever set via sortBy().
+     */
+    #[Locked]
     public string $sortColumn = 'name';
 
+    #[Locked]
     public string $sortDirection = 'asc';
 
     public function getView(): string
@@ -52,28 +71,138 @@ class DependencyAuditPage extends Page
         return 4;
     }
 
+    /**
+     * First HTML paint: cache hit or empty placeholder — never runs Composer.
+     */
     public function mount(): void
     {
-        $this->loadAudit();
+        $this->releaseSessionLockEarly();
+        $this->syncFromCache(requestRefresh: false);
     }
 
     /**
-     * Bust cache and re-run composer outdated/audit (easter-egg: type "refresh").
+     * Runs on every Livewire request (including polls) — unlock session immediately.
+     */
+    public function hydrate(): void
+    {
+        $this->releaseSessionLockEarly();
+    }
+
+    /**
+     * Filament-style deferred load: kick off background work once.
+     * Must return immediately — Composer never runs inside this Livewire request.
+     */
+    public function loadPageData(): void
+    {
+        $this->releaseSessionLockEarly();
+        $this->syncFromCache(requestRefresh: true);
+    }
+
+    /**
+     * Poll only — never re-dispatch. Stops the spinner when the worker finishes or dies.
+     */
+    public function pollPageData(): void
+    {
+        $this->releaseSessionLockEarly();
+        $this->syncFromCache(requestRefresh: false);
+    }
+
+    /**
+     * Front-end 3-minute guard: queue unavailable / stuck worker / broken parent install.
+     */
+    public function failScanTimeout(): void
+    {
+        $this->releaseSessionLockEarly();
+
+        if (! $this->scanning || filled($this->audit['error'] ?? null)) {
+            return;
+        }
+
+        $completed = app(ComposerDependencyAuditor::class)->completedPayload();
+
+        if ($completed !== null) {
+            $this->audit = $completed;
+            $this->scanning = false;
+
+            return;
+        }
+
+        $this->audit = app(ComposerDependencyAuditor::class)->rememberFailure(
+            'Dependency audit is still updating after 3 minutes. Check that a queue worker is running for this application (php artisan queue:work), or set dependency_audit.use_queue to false in the Passport config. This usually means the parent installation is not processing background jobs.'
+        );
+        $this->scanning = false;
+    }
+
+    /**
+     * Bust cache and re-run composer outdated/audit in the background.
      */
     public function refreshDependencyAudit(): void
     {
-        $this->audit = app(ComposerDependencyAuditor::class)->refresh();
+        $auditor = app(ComposerDependencyAuditor::class);
+        $auditor->forgetCache();
+        $auditor->clearRefreshRunning();
+
+        $this->audit = $auditor->placeholderPayload();
+        $this->scanning = true;
+        $this->refreshRequested = true;
+        $auditor->dispatchBackgroundRefresh(force: true);
 
         Notification::make()
-            ->title('Dependency audit refreshed')
-            ->body('Composer outdated packages and security advisories were re-checked.')
+            ->title('Dependency audit started')
+            ->body('Composer is re-checking outdated packages and advisories in the background. This can take 1–2 minutes.')
             ->success()
             ->send();
     }
 
-    protected function loadAudit(): void
+    /**
+     * @param  bool  $requestRefresh  Schedule background work (queue or detached artisan).
+     */
+    protected function syncFromCache(bool $requestRefresh): void
     {
-        $this->audit = app(ComposerDependencyAuditor::class)->audit();
+        // Let reload / other tabs proceed while we only peek cache + maybe spawn work.
+        $this->releaseSessionLockEarly();
+
+        $auditor = app(ComposerDependencyAuditor::class);
+
+        $completed = $auditor->completedPayload();
+
+        if ($completed !== null) {
+            $this->audit = $completed;
+            $this->scanning = false;
+
+            return;
+        }
+
+        if ($this->audit === [] || ! array_key_exists('outdated', $this->audit)) {
+            $this->audit = $auditor->placeholderPayload();
+        }
+
+        if ($auditor->isRefreshRunning()) {
+            $this->scanning = true;
+
+            return;
+        }
+
+        if ($requestRefresh) {
+            $this->refreshRequested = true;
+            // No-op if a refresh is already running (other tab / previous visit).
+            $auditor->dispatchBackgroundRefresh(force: true);
+            $this->scanning = true;
+
+            return;
+        }
+
+        // Poll: worker finished (or crashed) without writing a result — leave loading state.
+        if ($this->refreshRequested) {
+            $this->audit = $auditor->rememberFailure(
+                'Dependency audit did not complete. The background worker may have timed out or failed.'
+            );
+            $this->scanning = false;
+
+            return;
+        }
+
+        $this->scanning = true;
     }
 
     public function lastCheckSummary(): string

@@ -15,6 +15,65 @@
         </header>
     </section>
 
+    @if ($this->hasIncompatiblePackages())
+        <section class="fi-pp-license-summary fi-pp-license-summary--danger" role="status">
+            <div class="fi-pp-license-summary__icon">
+                <x-filament::icon icon="heroicon-o-exclamation-triangle" class="h-7 w-7" />
+            </div>
+            <div class="fi-pp-license-summary__body">
+                <h3 class="fi-pp-license-summary__title">Potential License Conflict Detected</h3>
+                <p class="fi-pp-license-summary__text">
+                    One or more installed packages use licenses that may be incompatible
+                    with proprietary commercial software.
+                </p>
+                <p class="fi-pp-license-summary__text">
+                    Review the packages listed below before distributing this application.
+                </p>
+
+                <div class="fi-pp-license-audit__table-wrap fi-pp-license-audit__table-wrap--nested">
+                    <table class="fi-pp-license-audit__table">
+                        <thead>
+                            <tr>
+                                <th>Package</th>
+                                <th>Version</th>
+                                <th>License</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($this->incompatiblePackages as $package)
+                                <tr wire:key="incompat-{{ $package['name'] }}">
+                                    <td><span class="fi-pp-mono">{{ $package['name'] }}</span></td>
+                                    <td>{{ $package['version'] }}</td>
+                                    <td>{{ $package['license_label'] }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    @else
+        <section class="fi-pp-license-summary fi-pp-license-summary--success" role="status">
+            <div class="fi-pp-license-summary__icon">
+                <x-filament::icon icon="heroicon-o-check-circle" class="h-7 w-7" />
+            </div>
+            <div class="fi-pp-license-summary__body">
+                <h3 class="fi-pp-license-summary__title">Commercial License Check Passed</h3>
+                <p class="fi-pp-license-summary__text">
+                    No incompatible package licenses were detected.
+                </p>
+                <p class="fi-pp-license-summary__text">
+                    Based on the installed Composer packages, this application may be
+                    commercially distributed.
+                </p>
+                <p class="fi-pp-license-summary__text">
+                    Packages marked as “Requires Review” should be reviewed manually
+                    before distribution.
+                </p>
+            </div>
+        </section>
+    @endif
+
     <section class="fi-pp-card fi-pp-license-audit__table-card">
         <div class="fi-pp-license-audit__toolbar">
             <label class="fi-pp-license-audit__search">
@@ -90,7 +149,7 @@
                     @empty
                         <tr>
                             <td colspan="4" class="fi-pp-license-audit__empty">
-                No installed Composer packages matched your search.
+                                No installed Composer packages matched your search.
                             </td>
                         </tr>
                     @endforelse
@@ -98,63 +157,4 @@
             </table>
         </div>
     </section>
-
-    @if ($this->hasIncompatiblePackages())
-        <section class="fi-pp-license-summary fi-pp-license-summary--danger" role="status">
-            <div class="fi-pp-license-summary__icon">
-                <x-filament::icon icon="heroicon-o-exclamation-triangle" class="h-7 w-7" />
-            </div>
-            <div class="fi-pp-license-summary__body">
-                <h3 class="fi-pp-license-summary__title">Potential License Conflict Detected</h3>
-                <p class="fi-pp-license-summary__text">
-                    One or more installed packages use licenses that may be incompatible
-                    with proprietary commercial software.
-                </p>
-                <p class="fi-pp-license-summary__text">
-                    Review the packages listed below before distributing this application.
-                </p>
-
-                <div class="fi-pp-license-audit__table-wrap fi-pp-license-audit__table-wrap--nested">
-                    <table class="fi-pp-license-audit__table">
-                        <thead>
-                            <tr>
-                                <th>Package</th>
-                                <th>Version</th>
-                                <th>License</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($this->incompatiblePackages as $package)
-                                <tr wire:key="incompat-{{ $package['name'] }}">
-                                    <td><span class="fi-pp-mono">{{ $package['name'] }}</span></td>
-                                    <td>{{ $package['version'] }}</td>
-                                    <td>{{ $package['license_label'] }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </section>
-    @else
-        <section class="fi-pp-license-summary fi-pp-license-summary--success" role="status">
-            <div class="fi-pp-license-summary__icon">
-                <x-filament::icon icon="heroicon-o-check-circle" class="h-7 w-7" />
-            </div>
-            <div class="fi-pp-license-summary__body">
-                <h3 class="fi-pp-license-summary__title">Commercial License Check Passed</h3>
-                <p class="fi-pp-license-summary__text">
-                    No incompatible package licenses were detected.
-                </p>
-                <p class="fi-pp-license-summary__text">
-                    Based on the installed Composer packages, this application may be
-                    commercially distributed.
-                </p>
-                <p class="fi-pp-license-summary__text">
-                    Packages marked as “Requires Review” should be reviewed manually
-                    before distribution.
-                </p>
-            </div>
-        </section>
-    @endif
 </div>

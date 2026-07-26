@@ -1,0 +1,2 @@
+providers:
+    - EgyptDevRu\FilamentProjectPassport\FilamentProjectPassportServiceProvider

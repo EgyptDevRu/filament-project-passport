@@ -1,6 +1,7 @@
 <x-filament-panels::page>
     <div
         class="fi-pp"
+        wire:init="loadPageData"
         x-data="{
             buffer: '',
             timer: null,
@@ -55,15 +56,22 @@
         }"
         x-on:keydown.window="onKey($event)"
     >
-        @if ($this->isUndefinedStatus())
-            @include('filament-project-passport::components.undefined-status')
-        @elseif ($this->isOfficial())
-            @include('filament-project-passport::components.developer-info')
+        @if (! $this->ready)
+            @include('filament-project-passport::components.loading-state', [
+                'title' => 'Checking support status…',
+                'message' => 'Contacting the license service for this domain.',
+            ])
         @else
-            @include('filament-project-passport::components.unofficial-alert')
-        @endif
+            @if ($this->isUndefinedStatus())
+                @include('filament-project-passport::components.undefined-status')
+            @elseif ($this->isOfficial())
+                @include('filament-project-passport::components.developer-info')
+            @else
+                @include('filament-project-passport::components.unofficial-alert')
+            @endif
 
-        @include('filament-project-passport::components.support-intro')
+            @include('filament-project-passport::components.support-intro')
+        @endif
 
         <template x-teleport="body">
             <div

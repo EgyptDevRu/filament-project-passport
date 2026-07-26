@@ -60,6 +60,12 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
 
         if (class_exists(PanelRegistry::class)) {
             $this->app->afterResolving(PanelRegistry::class, function (PanelRegistry $registry): void {
+                // PanelRegistry is an internal-ish Filament class whose API
+                // has shifted across major versions.
+                if (! method_exists($registry, 'all')) {
+                    return;
+                }
+
                 foreach ($registry->all() as $panel) {
                     $this->ensurePagesRegistered($panel);
                 }
@@ -70,6 +76,7 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
     public function packageBooted(): void
     {
         $this->registerStyles();
+        $this->registerEnvironmentBadge();
         $this->registerSchedule();
 
         if (! class_exists(Filament::class) || ! $this->app->bound('filament')) {
@@ -102,6 +109,28 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
         });
     }
 
+    protected function registerEnvironmentBadge(): void
+    {
+        if (! class_exists(FilamentView::class) || ! class_exists(PanelsRenderHook::class)) {
+            return;
+        }
+
+        $render = fn (): string => view('filament-project-passport::components.environment-badge')->render();
+
+        // Guard each constant individually — class_exists() only proves the
+        // class survived, not that every hook name it defines still exists
+        // (render hooks have been added/renamed across Filament majors).
+        if (defined(PanelsRenderHook::class.'::TOPBAR_LOGO_AFTER')) {
+            // Desktop: logo lives in the topbar (fi-topbar-start is lg:flex only).
+            FilamentView::registerRenderHook(PanelsRenderHook::TOPBAR_LOGO_AFTER, $render);
+        }
+
+        if (defined(PanelsRenderHook::class.'::SIDEBAR_LOGO_AFTER')) {
+            // Mobile: logo lives in the sidebar header (fi-sidebar-header is lg:hidden with topbar).
+            FilamentView::registerRenderHook(PanelsRenderHook::SIDEBAR_LOGO_AFTER, $render);
+        }
+    }
+
     protected function registerStyles(): void
     {
         $stylesheet = dirname(__DIR__).'/resources/dist/filament-project-passport.css';
@@ -115,7 +144,11 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
          * (e.g. /css/egyptdevru/.../filament-project-passport.css) that 404
          * unless `php artisan filament:assets` is run in the host app.
          */
-        if (class_exists(FilamentView::class) && class_exists(PanelsRenderHook::class)) {
+        if (
+            class_exists(FilamentView::class)
+            && class_exists(PanelsRenderHook::class)
+            && defined(PanelsRenderHook::class.'::STYLES_AFTER')
+        ) {
             FilamentView::registerRenderHook(
                 PanelsRenderHook::STYLES_AFTER,
                 function () use ($stylesheet): string {

@@ -4,6 +4,7 @@ namespace EgyptDevRu\FilamentProjectPassport\Services;
 
 use DOMDocument;
 use DOMElement;
+use EgyptDevRu\FilamentProjectPassport\Support\DocumentationVisibility;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
@@ -26,7 +27,7 @@ final class DocumentationScanner
     {
         $directory = $this->docsPath();
 
-        if (! $this->isEnabled() || ! File::isDirectory($directory)) {
+        if (! $this->isEnabled() || ! DocumentationVisibility::contentAllowed() || ! File::isDirectory($directory)) {
             return collect();
         }
 
@@ -139,6 +140,10 @@ final class DocumentationScanner
 
     public function renderFile(string $absolutePath, ?string $currentRelative = null): string
     {
+        if (! DocumentationVisibility::contentAllowed()) {
+            return '';
+        }
+
         if (! File::isFile($absolutePath) || ! Str::endsWith(strtolower($absolutePath), '.md')) {
             return '';
         }

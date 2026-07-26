@@ -12,8 +12,6 @@ use Throwable;
 
 /**
  * License / developer-info API client.
- *
- * SECURITY: The API URL is resolved via LicenseApiGateway (not config/.env).
  */
 final class LicenseApiClient
 {
@@ -23,7 +21,9 @@ final class LicenseApiClient
     /** Failed / unreachable responses are cached briefly to avoid hammering the API. */
     private const int FAILURE_CACHE_TTL_SECONDS = 15 * 60;
 
-    private const int REQUEST_TIMEOUT_SECONDS = 10;
+    private const int REQUEST_TIMEOUT_SECONDS = 5;
+
+    private const int CONNECT_TIMEOUT_SECONDS = 2;
 
     /**
      * Fetch (and cache) license / developer information for the current host.
@@ -35,11 +35,10 @@ final class LicenseApiClient
         $host = $this->resolveHost();
         $cacheKey = $this->cacheKey($host);
 
-        /** @var array<string, mixed>|null $cached */
-        $cached = Cache::get($cacheKey);
+        $cached = $this->cachedPayload($host);
 
-        if (is_array($cached)) {
-            return $this->withMeta($cached, fromCache: true);
+        if ($cached !== null) {
+            return $cached;
         }
 
         $result = $this->requestFromApi($host);
@@ -51,6 +50,23 @@ final class LicenseApiClient
         Cache::put($cacheKey, $this->cacheablePayload($result), $ttl);
 
         return $this->withMeta($result, fromCache: false);
+    }
+
+    /**
+     * Cached license payload only — never hits the network. Null when missing.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function cachedPayload(?string $host = null): ?array
+    {
+        /** @var array<string, mixed>|null $cached */
+        $cached = Cache::get($this->cacheKey($host));
+
+        if (! is_array($cached)) {
+            return null;
+        }
+
+        return $this->withMeta($cached, fromCache: true);
     }
 
     /**
@@ -67,10 +83,7 @@ final class LicenseApiClient
 
     public function isOfficial(): bool
     {
-        $result = $this->fetch();
-
-        return ! LicenseErrorCode::isUndefinedStatus($result)
-            && (bool) ($result['is_official'] ?? false);
+        return $this->isOfficialPayload($this->fetch());
     }
 
     /**
@@ -79,6 +92,51 @@ final class LicenseApiClient
     public function allowsDocumentation(): bool
     {
         return $this->isOfficial();
+    }
+
+    /**
+     * Nav / canAccess only — never blocks on the network.
+     * Cold cache ⇒ false (docs stay hidden until Status or a background warm fills the cache).
+     */
+    public function allowsDocumentationFromCache(): bool
+    {
+        $cached = $this->cachedPayload();
+
+        if ($cached === null) {
+            return false;
+        }
+
+        return $this->isOfficialPayload($cached);
+    }
+
+    /**
+     * Warm the license cache after the HTTP response (Filament sidebar must stay fast).
+     */
+    public function dispatchBackgroundFetch(): bool
+    {
+        if ($this->cachedPayload() !== null) {
+            return false;
+        }
+
+        $lockKey = $this->cacheKey().'.fetching';
+
+        if (! Cache::add($lockKey, true, 60)) {
+            return false;
+        }
+
+        if (app()->runningUnitTests()) {
+            return true;
+        }
+
+        dispatch(function () use ($lockKey): void {
+            try {
+                app(self::class)->fetch();
+            } finally {
+                Cache::forget($lockKey);
+            }
+        })->afterResponse();
+
+        return true;
     }
 
     public function forgetCache(): void
@@ -99,6 +157,15 @@ final class LicenseApiClient
     }
 
     /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function isOfficialPayload(array $payload): bool
+    {
+        return ! LicenseErrorCode::isUndefinedStatus($payload)
+            && (bool) ($payload['is_official'] ?? false);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function requestFromApi(string $host): array
@@ -106,7 +173,8 @@ final class LicenseApiClient
         $endpoint = $this->endpoint();
 
         try {
-            $response = Http::timeout(self::REQUEST_TIMEOUT_SECONDS)
+            $response = Http::connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
+                ->timeout(self::REQUEST_TIMEOUT_SECONDS)
                 ->asJson()
                 ->withHeaders($this->requestHeaders($host))
                 ->post($endpoint, [
@@ -251,9 +319,6 @@ final class LicenseApiClient
     }
 
     /**
-     * Browser-like headers so hosting WAF / anti-DDoS layers do not treat
-     * the license check as a bare HTTP client probe.
-     *
      * @return array<string, string>
      */
     private function requestHeaders(string $host): array
@@ -286,24 +351,42 @@ final class LicenseApiClient
         return is_array($decoded) ? $decoded : null;
     }
 
+    /**
+     * Prefers the host configured via `config('app.url')`. Falls back to the
+     * current request's host only for local/dev environments where APP_URL
+     * is unset or still points at localhost.
+     */
     private function resolveHost(): string
     {
+        $configured = $this->configuredAppHost();
+
+        if ($configured !== null) {
+            return $configured;
+        }
+
         try {
             $host = request()->getHost();
         } catch (Throwable) {
             $host = null;
         }
 
-        if (blank($host) || in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
-            $appUrl = (string) config('app.url', '');
-            $parsed = parse_url($appUrl, PHP_URL_HOST);
+        return is_string($host) && $host !== '' ? $host : 'unknown.host';
+    }
 
-            if (is_string($parsed) && $parsed !== '') {
-                return $parsed;
-            }
+    private function configuredAppHost(): ?string
+    {
+        $appUrl = (string) config('app.url', '');
+        $parsed = parse_url($appUrl, PHP_URL_HOST);
+
+        if (! is_string($parsed) || $parsed === '') {
+            return null;
         }
 
-        return is_string($host) && $host !== '' ? $host : 'unknown.host';
+        if (in_array(strtolower($parsed), ['localhost', '127.0.0.1', '::1'], true)) {
+            return null;
+        }
+
+        return $parsed;
     }
 
     /**

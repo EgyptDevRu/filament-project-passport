@@ -3,6 +3,7 @@
 namespace EgyptDevRu\FilamentProjectPassport\Pages;
 
 use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\InteractsWithPassportNavigation;
+use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\LoadsPassportDataLazily;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerLicenseAuditor;
 use EgyptDevRu\FilamentProjectPassport\Support\CheckAge;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseStatus;
@@ -13,6 +14,7 @@ use Livewire\Attributes\Locked;
 class LicenseAuditPage extends Page
 {
     use InteractsWithPassportNavigation;
+    use LoadsPassportDataLazily;
 
     protected static ?string $slug = 'developer-support/license-audit';
 
@@ -37,8 +39,13 @@ class LicenseAuditPage extends Page
 
     public string $search = '';
 
+    /**
+     * Only ever set via sortBy().
+     */
+    #[Locked]
     public string $sortColumn = 'name';
 
+    #[Locked]
     public string $sortDirection = 'asc';
 
     public function getView(): string
@@ -66,13 +73,8 @@ class LicenseAuditPage extends Page
         return 3;
     }
 
-    public function mount(): void
-    {
-        $this->loadAudit();
-    }
-
     /**
-     * Bust cache and re-scan packages (easter-egg: type "refresh").
+     * Bust cache and re-scan packages.
      */
     public function refreshLicenseAudit(): void
     {
@@ -81,6 +83,7 @@ class LicenseAuditPage extends Page
         $this->packages = $result['packages'];
         $this->checkedAt = $result['checked_at'];
         $this->fromCache = false;
+        $this->ready = true;
 
         Notification::make()
             ->title('License audit refreshed')
@@ -89,7 +92,7 @@ class LicenseAuditPage extends Page
             ->send();
     }
 
-    protected function loadAudit(): void
+    protected function hydratePassportData(): void
     {
         $result = app(ComposerLicenseAuditor::class)->audit();
 

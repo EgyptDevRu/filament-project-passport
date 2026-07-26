@@ -3,9 +3,11 @@
 namespace EgyptDevRu\FilamentProjectPassport\Services;
 
 use Composer\InstalledVersions;
+use EgyptDevRu\FilamentProjectPassport\Jobs\RefreshDependencyAuditJob;
 use EgyptDevRu\FilamentProjectPassport\Support\ComposerBinary;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Symfony\Component\Process\Process;
 use Throwable;
 
 /**
@@ -17,6 +19,20 @@ final class ComposerDependencyAuditor
     public const int CACHE_FRESH_DAYS = 7;
 
     private const int CACHE_TTL_SECONDS = self::CACHE_FRESH_DAYS * 24 * 60 * 60;
+
+    /** Failed scans are cached briefly so the UI can show the error via poll. */
+    private const int FAILURE_CACHE_TTL_SECONDS = 10 * 60;
+
+    /**
+     * Overall wall-clock cap for a single scan() call (both Composer sub-calls
+     * combined). Keep RefreshDependencyAuditJob::$timeout comfortably above
+     * this value so the queue worker never kills the job before this limit
+     * would naturally stop it.
+     */
+    public const int MAX_SCAN_SECONDS = 600;
+
+    /** Per Composer sub-call timeout — two calls run sequentially per scan(). */
+    private const float COMPOSER_CALL_TIMEOUT_SECONDS = 240.0;
 
     private const string LARAVEL_PACKAGE = 'laravel/framework';
 
@@ -39,27 +55,170 @@ final class ComposerDependencyAuditor
     {
         $cacheKey = $this->cacheKey();
 
-        if (! $fresh) {
-            /** @var array<string, mixed>|null $cached */
-            $cached = Cache::get($cacheKey);
+        try {
+            if (! $fresh) {
+                $cached = $this->cachedPayload();
 
-            if (is_array($cached) && isset($cached['checked_at'], $cached['outdated'], $cached['advisories']) && empty($cached['error'])) {
-                return array_merge($this->emptyPayload(), $cached, [
-                    'from_cache' => true,
-                ]);
+                if ($cached !== null) {
+                    return $cached;
+                }
             }
+
+            $payload = $this->scan();
+
+            $ttl = empty($payload['error'])
+                ? self::CACHE_TTL_SECONDS
+                : self::FAILURE_CACHE_TTL_SECONDS;
+
+            Cache::put($cacheKey, $payload, $ttl);
+
+            return array_merge($payload, ['from_cache' => false]);
+        } finally {
+            $this->clearRefreshRunning();
+        }
+    }
+
+    /**
+     * Successful cached payload only — never runs Composer. Null when missing/invalid/error.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function cachedPayload(): ?array
+    {
+        $completed = $this->completedPayload();
+
+        if ($completed === null || ! empty($completed['error'])) {
+            return null;
         }
 
-        $payload = $this->scan();
+        return $completed;
+    }
 
-        // Never cache failed scans — otherwise a one-off CLI/PATH glitch sticks as "0 outdated".
-        if (empty($payload['error'])) {
-            Cache::put($cacheKey, $payload, self::CACHE_TTL_SECONDS);
-        } else {
-            Cache::forget($cacheKey);
+    /**
+     * Last finished scan (success or error) for UI polling. Null while still running / never run.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function completedPayload(): ?array
+    {
+        /** @var array<string, mixed>|null $cached */
+        $cached = Cache::get($this->cacheKey());
+
+        if (! is_array($cached) || ! isset($cached['checked_at'], $cached['outdated'], $cached['advisories'])) {
+            return null;
         }
+
+        return array_merge($this->emptyPayload(), $cached, [
+            'from_cache' => true,
+        ]);
+    }
+
+    /**
+     * Ask for a refresh without blocking the HTTP/Livewire request (Filament-style).
+     *
+     * Order:
+     * 1) Real queue worker (non-sync) → RefreshDependencyAuditJob
+     * 2) Detached `artisan` process (returns immediately; Composer runs elsewhere)
+     *
+     * Never uses afterResponse() — on many hosts that keeps the browser waiting
+     * until Composer finishes.
+     *
+     * Returns false when a refresh is already in progress.
+     */
+    public function dispatchBackgroundRefresh(bool $force = true): bool
+    {
+        if (! $this->markRefreshRunning()) {
+            return false;
+        }
+
+        // Avoid running Composer during Pest/PHPUnit.
+        if (app()->runningUnitTests()) {
+            return true;
+        }
+
+        if ($this->shouldUseQueue()) {
+            RefreshDependencyAuditJob::dispatch($force);
+
+            return true;
+        }
+
+        $this->spawnDetachedArtisanRefresh($force);
+
+        return true;
+    }
+
+    public function shouldUseQueue(): bool
+    {
+        if (! (bool) config('filament-project-passport.dependency_audit.use_queue', true)) {
+            return false;
+        }
+
+        $connection = (string) config('queue.default', 'sync');
+
+        return $connection !== '' && $connection !== 'sync';
+    }
+
+    public function isRefreshRunning(): bool
+    {
+        return Cache::has($this->runningLockKey());
+    }
+
+    public function markRefreshRunning(): bool
+    {
+        // Stay above RefreshDependencyAuditJob::$timeout so the lock cannot
+        // expire (and be re-dispatched) while that job is still finishing.
+        return Cache::add($this->runningLockKey(), true, self::MAX_SCAN_SECONDS + 120);
+    }
+
+    public function clearRefreshRunning(): void
+    {
+        Cache::forget($this->runningLockKey());
+    }
+
+    /**
+     * Persist a failed scan so the UI can leave the loading state via poll.
+     *
+     * @return array<string, mixed>
+     */
+    public function rememberFailure(string $message): array
+    {
+        $payload = $this->emptyPayload();
+        $payload['error'] = $message;
+
+        Cache::put($this->cacheKey(), $payload, self::FAILURE_CACHE_TTL_SECONDS);
+        $this->clearRefreshRunning();
 
         return array_merge($payload, ['from_cache' => false]);
+    }
+
+    /**
+     * Empty UI payload for first paint when cache is cold (no Composer, no fake checked_at).
+     *
+     * @return array<string, mixed>
+     */
+    public function placeholderPayload(): array
+    {
+        return [
+            'outdated_count' => 0,
+            'advisory_count' => 0,
+            'outdated' => [],
+            'advisories' => [],
+            'laravel' => [
+                'installed' => null,
+                'latest' => null,
+                'up_to_date' => false,
+                'installed_flag' => false,
+            ],
+            'filament' => [
+                'installed' => null,
+                'latest' => null,
+                'up_to_date' => false,
+                'installed_flag' => false,
+            ],
+            'checked_at' => null,
+            'from_cache' => false,
+            'error' => null,
+        ];
     }
 
     /**
@@ -75,6 +234,43 @@ final class ComposerDependencyAuditor
     public function forgetCache(): void
     {
         Cache::forget($this->cacheKey());
+    }
+
+    private function runningLockKey(): string
+    {
+        return $this->cacheKey().'.running';
+    }
+
+    /**
+     * Fire-and-forget artisan refresh so the Livewire request can return immediately.
+     *
+     * Uses Symfony Process with array arguments (no shell string, no injection
+     * surface) plus the `create_new_console` option, which tells Process to
+     * close its pipes instead of stopping/waiting for the child in its
+     * destructor — letting the artisan command keep running after this
+     * request ends, on both Windows and *nix.
+     */
+    private function spawnDetachedArtisanRefresh(bool $force): void
+    {
+        $arguments = [
+            ComposerBinary::phpCliBinary(),
+            base_path('artisan'),
+            'filament-project-passport:refresh-dependency-audit',
+        ];
+
+        if ($force) {
+            $arguments[] = '--force';
+        }
+
+        $process = new Process($arguments, base_path(), ComposerBinary::inheritedEnvironment());
+        $process->setOptions(['create_new_console' => true]);
+        $process->disableOutput();
+
+        try {
+            $process->start();
+        } catch (Throwable) {
+            // Best effort — a stuck queue/host surfaces via the client-side timeout instead.
+        }
     }
 
     /**
@@ -107,8 +303,8 @@ final class ComposerDependencyAuditor
         $lock = base_path('composer.lock');
         $fingerprint = is_file($lock) ? (string) md5_file($lock) : md5(base_path());
 
-        // v2: invalidate older empty/failed parses cached before CLI/JSON fixes.
-        return 'filament-project-passport.dependency-audit.v2.'.$fingerprint;
+        // v3: SSH→HTTPS git rewrite + error-cache / poll fixes.
+        return 'filament-project-passport.dependency-audit.v3.'.$fingerprint;
     }
 
     /**
@@ -116,6 +312,13 @@ final class ComposerDependencyAuditor
      */
     private function scan(): array
     {
+        // Composer outdated/audit can take a while on a cold install, but an
+        // unbounded (0) limit removes PHP's own safety net entirely. Bound it
+        // to the same cap the queue job's timeout is coordinated against.
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(self::MAX_SCAN_SECONDS);
+        }
+
         $payload = $this->emptyPayload();
         $payload['checked_at'] = now()->toIso8601String();
 
@@ -147,7 +350,7 @@ final class ComposerDependencyAuditor
      */
     private function runComposerJson(array $arguments): array
     {
-        $process = ComposerBinary::run($arguments, base_path(), 180);
+        $process = ComposerBinary::run($arguments, base_path(), self::COMPOSER_CALL_TIMEOUT_SECONDS);
 
         $stdout = trim($process->getOutput());
         $stderr = trim($process->getErrorOutput());

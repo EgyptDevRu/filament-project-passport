@@ -7,3 +7,23 @@ parameters:
         - src
         - config
     tmpDir: build/phpstan
+    configDirectories:
+        - %currentWorkingDirectory%/config
+
+    # This package declares support for several Filament majors, but only one
+    # is actually installed in any given dev/CI run. With this on (default),
+    # PHPStan treats the installed version's PHPDoc-sourced method signatures
+    # as guaranteed truth, so every method_exists() guard added for
+    # cross-version compatibility gets flagged as "always true" — even though
+    # at runtime, on a different supported major, the method may not exist.
+    treatPhpDocTypesAsCertain: false
+
+    ignoreErrors:
+        # Same cross-version story as above, but for methods declared natively
+        # (not via PHPDoc) on the installed Filament version, so
+        # treatPhpDocTypesAsCertain: false above does not cover them.
+        -
+            identifier: function.alreadyNarrowedType
+            paths:
+                - src/FilamentProjectPassportServiceProvider.php
+                - src/Pages/Concerns/InteractsWithPassportNavigation.php

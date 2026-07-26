@@ -3,8 +3,10 @@
 namespace EgyptDevRu\FilamentProjectPassport\Pages;
 
 use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\InteractsWithPassportNavigation;
+use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\LoadsPassportDataLazily;
 use EgyptDevRu\FilamentProjectPassport\Services\DocumentationScanner;
 use EgyptDevRu\FilamentProjectPassport\Services\LicenseApiClient;
+use EgyptDevRu\FilamentProjectPassport\Support\DocumentationVisibility;
 use EgyptDevRu\FilamentProjectPassport\Support\PageAuthorizer;
 use Filament\Pages\Page;
 use Livewire\Attributes\Locked;
@@ -12,6 +14,7 @@ use Livewire\Attributes\Locked;
 class DocumentationPage extends Page
 {
     use InteractsWithPassportNavigation;
+    use LoadsPassportDataLazily;
 
     protected static ?string $slug = 'developer-support/documentation';
 
@@ -21,8 +24,18 @@ class DocumentationPage extends Page
             return false;
         }
 
-        // Hide docs for unofficial domains and undefined / failed license checks.
-        return app(LicenseApiClient::class)->allowsDocumentation();
+        // Cache only — never call the license API while Filament builds navigation
+        // (runs on every admin page and was causing 20–50s "waiting for server").
+        return app(LicenseApiClient::class)->allowsDocumentationFromCache();
+    }
+
+    /**
+     * Whether Markdown content may be listed/rendered in this environment.
+     * Menu visibility is separate (license); this only gates page body content.
+     */
+    public function documentationContentAllowed(): bool
+    {
+        return DocumentationVisibility::contentAllowed();
     }
 
     /**
@@ -44,6 +57,10 @@ class DocumentationPage extends Page
      */
     public array $expandedFolders = [];
 
+    /**
+     * Only ever set via selectDocument().
+     */
+    #[Locked]
     public ?string $activeDocumentKey = null;
 
     public function getView(): string
@@ -71,17 +88,16 @@ class DocumentationPage extends Page
         return 2;
     }
 
-    public function mount(): void
-    {
-        $this->loadDocuments();
-    }
-
     /**
      * HTML is derived server-side from the active key so clients cannot inject markup.
      */
     public function getActiveDocumentHtmlProperty(): string
     {
-        if ($this->activeDocumentKey === null || $this->activeDocumentKey === '') {
+        if (! $this->documentationContentAllowed()) {
+            return '';
+        }
+
+        if (! $this->ready || $this->activeDocumentKey === null || $this->activeDocumentKey === '') {
             return '';
         }
 
@@ -94,6 +110,10 @@ class DocumentationPage extends Page
 
     public function selectDocument(string $key): void
     {
+        if (! $this->documentationContentAllowed()) {
+            return;
+        }
+
         if (! $this->isKnownDocumentKey($key)) {
             return;
         }
@@ -104,6 +124,10 @@ class DocumentationPage extends Page
 
     public function toggleFolder(string $folderKey): void
     {
+        if (! $this->documentationContentAllowed()) {
+            return;
+        }
+
         if (in_array($folderKey, $this->expandedFolders, true)) {
             $this->expandedFolders = array_values(array_filter(
                 $this->expandedFolders,
@@ -116,8 +140,17 @@ class DocumentationPage extends Page
         $this->expandedFolders[] = $folderKey;
     }
 
-    protected function loadDocuments(): void
+    protected function hydratePassportData(): void
     {
+        if (! $this->documentationContentAllowed()) {
+            $this->documents = [];
+            $this->documentTree = [];
+            $this->activeDocumentKey = null;
+            $this->expandedFolders = [];
+
+            return;
+        }
+
         $scanner = app(DocumentationScanner::class);
 
         $this->documents = $scanner->listMarkdownFiles()

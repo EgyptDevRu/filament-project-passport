@@ -4,8 +4,6 @@ namespace EgyptDevRu\FilamentProjectPassport\Support;
 
 /**
  * Resolves the EgyptDev Studio API URL at runtime.
- *
- * This is obfuscation against casual inspection — not cryptographic secrecy.
  */
 final class LicenseApiGateway
 {

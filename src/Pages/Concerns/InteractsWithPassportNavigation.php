@@ -60,8 +60,13 @@ trait InteractsWithPassportNavigation
             ->group(static::getNavigationGroup())
             ->sort($resolvedSort)
             ->url(static::getUrl())
-            ->isActiveWhen(fn (): bool => request()->routeIs(static::getRouteName()))
-            ->key(static::class);
+            ->isActiveWhen(fn (): bool => request()->routeIs(static::getRouteName()));
+
+        // ->key() is a newer builder method, not guaranteed present across
+        // every Filament major this package declares support for.
+        if (method_exists($item, 'key')) {
+            $item->key(static::class);
+        }
 
         return [$item];
     }

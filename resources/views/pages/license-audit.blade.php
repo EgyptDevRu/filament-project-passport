@@ -1,6 +1,7 @@
 <x-filament-panels::page>
     <div
         class="fi-pp"
+        wire:init="loadPageData"
         x-data="{
             buffer: '',
             timer: null,
@@ -33,6 +34,13 @@
         }"
         x-on:keydown.window="onKey($event)"
     >
-        @include('filament-project-passport::components.license-audit')
+        @if (! $this->ready)
+            @include('filament-project-passport::components.loading-state', [
+                'title' => 'Auditing licenses…',
+                'message' => 'Scanning Composer package licenses. This may take a moment on the first visit.',
+            ])
+        @else
+            @include('filament-project-passport::components.license-audit')
+        @endif
     </div>
 </x-filament-panels::page>

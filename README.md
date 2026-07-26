@@ -18,7 +18,7 @@ Support status, documentation, and other studio-backed features only work when t
 
 ## Requirements
 
-- PHP 8.2+
+- PHP 8.3+
 - Laravel 10 / 11 / 12+
 - Filament `^3.0` | `^4.0` | `^5.0`
 
@@ -47,6 +47,27 @@ After install, open any Filament panel — the **Developer Support** group appea
 Artisan commands and their schedule entries are registered by the package automatically. You do **not** need to add them to your app’s `routes/console.php` / `Kernel` schedule. You only need Laravel’s normal scheduler cron on the server (see below).
 
 ## Configuration
+
+### Per-environment overrides via `.env`
+
+The most commonly environment-specific settings can be overridden with `.env` variables instead of editing the published config file, so a local-only tweak (e.g. previewing docs on your machine) never gets committed and rolled out to staging/production by accident:
+
+| `.env` variable                                        | Config key                              | Default |
+|--------------------------------------------------------|-----------------------------------------|---------|
+| `FILAMENT_PROJECT_PASSPORT_RESTRICTED_TO_ADMINS`       | `authorization.restricted_to_admins`    | `true`  |
+| `FILAMENT_PROJECT_PASSPORT_RESTRICT_NON_PRODUCTION`    | `authorization.restrict_non_production` | `false` |
+| `FILAMENT_PROJECT_PASSPORT_DOCS_ENABLED`               | `docs.enabled`                          | `true`  |
+| `FILAMENT_PROJECT_PASSPORT_DOCS_ALLOW_NON_PRODUCTION`  | `docs.allow_non_production`             | `false` |
+| `FILAMENT_PROJECT_PASSPORT_DEPENDENCY_AUDIT_USE_QUEUE` | `dependency_audit.use_queue`            | `true`  |
+
+For example, to preview documentation content locally without touching the committed config:
+
+```env
+# .env (local only, not committed)
+FILAMENT_PROJECT_PASSPORT_DOCS_ALLOW_NON_PRODUCTION=true
+```
+
+If you run `php artisan config:cache`, re-run it after changing any of these `.env` values.
 
 ### Authorization evaluation order
 

@@ -172,4 +172,14 @@ final class ComposerBinary
 
         return $env;
     }
+
+    /**
+     * Environment passed to Composer / artisan subprocesses (host PATH, etc.).
+     *
+     * @return array<string, string>
+     */
+    public static function inheritedEnvironment(): array
+    {
+        return self::processEnvironment();
+    }
 }

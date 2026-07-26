@@ -13,35 +13,44 @@ class RefreshDependencyAuditCommand extends Command
 
     public function handle(ComposerDependencyAuditor $auditor): int
     {
-        $force = (bool) $this->option('force') || now()->isSunday();
+        try {
+            $force = (bool) $this->option('force') || now()->isSunday();
 
-        if (! $force && ! $auditor->shouldRefresh()) {
-            $current = $auditor->audit();
+            if (! $force && ! $auditor->shouldRefresh()) {
+                $current = $auditor->audit();
+                $this->info(sprintf(
+                    'Dependency audit cache is still fresh (checked at %s). Skipping.',
+                    $current['checked_at'],
+                ));
+
+                return self::SUCCESS;
+            }
+
+            $this->info('Refreshing dependency audit…');
+
+            $result = $auditor->refresh();
+
+            if (! empty($result['error'])) {
+                $this->error((string) $result['error']);
+
+                return self::FAILURE;
+            }
+
             $this->info(sprintf(
-                'Dependency audit cache is still fresh (checked at %s). Skipping.',
-                $current['checked_at'],
+                'Done. %d outdated, %d advisories. Checked at %s',
+                (int) ($result['outdated_count'] ?? 0),
+                (int) ($result['advisory_count'] ?? 0),
+                (string) ($result['checked_at'] ?? 'unknown'),
             ));
 
             return self::SUCCESS;
-        }
-
-        $this->info('Refreshing dependency audit…');
-
-        $result = $auditor->refresh();
-
-        if (! empty($result['error'])) {
-            $this->error((string) $result['error']);
+        } catch (\Throwable $exception) {
+            $auditor->rememberFailure($exception->getMessage());
+            $this->error($exception->getMessage());
 
             return self::FAILURE;
+        } finally {
+            $auditor->clearRefreshRunning();
         }
-
-        $this->info(sprintf(
-            'Done. %d outdated, %d advisories. Checked at %s',
-            (int) ($result['outdated_count'] ?? 0),
-            (int) ($result['advisory_count'] ?? 0),
-            (string) ($result['checked_at'] ?? 'unknown'),
-        ));
-
-        return self::SUCCESS;
     }
 }

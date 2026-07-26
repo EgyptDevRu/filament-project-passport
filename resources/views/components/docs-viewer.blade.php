@@ -11,7 +11,7 @@
             <div class="fi-pp-docs-empty">
                 <x-filament::icon
                     icon="heroicon-o-document-text"
-                    class="mx-auto h-10 w-10 text-gray-400"
+                    class="fi-pp-docs-empty__icon"
                 />
                 <p class="fi-pp-docs-empty__title">No documentation found</p>
                 <p class="fi-pp-docs-empty__text">
@@ -82,7 +82,14 @@
             return;
         }
 
-        const MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js';
+        // Pinned to an exact release (not a floating "@11" tag) so the
+        // Subresource Integrity hash always matches the fetched file — a
+        // floating tag would silently break SRI (and thus the diagram
+        // viewer) the moment a new mermaid patch version is published.
+        // Both values live in config('filament-project-passport.docs.mermaid').
+        const MERMAID_VERSION = {!! Illuminate\Support\Js::from(config('filament-project-passport.docs.mermaid.version')) !!};
+        const MERMAID_CDN = `https://cdn.jsdelivr.net/npm/mermaid@${MERMAID_VERSION}/dist/mermaid.min.js`;
+        const MERMAID_INTEGRITY = {!! Illuminate\Support\Js::from(config('filament-project-passport.docs.mermaid.integrity')) !!};
 
         window.fiPpEnsureMermaid = function () {
             if (window.mermaid) {
@@ -96,6 +103,9 @@
             window.__fiPpMermaidLoading = new Promise((resolve, reject) => {
                 const script = document.createElement('script');
                 script.src = MERMAID_CDN;
+                script.integrity = MERMAID_INTEGRITY;
+                script.crossOrigin = 'anonymous';
+                script.referrerPolicy = 'no-referrer';
                 script.async = true;
                 script.onload = () => {
                     const dark = document.documentElement.classList.contains('dark');

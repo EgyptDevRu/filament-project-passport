@@ -4,6 +4,7 @@ use EgyptDevRu\FilamentProjectPassport\Pages\DocumentationPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\StatusPage;
 use EgyptDevRu\FilamentProjectPassport\Services\DocumentationScanner;
 use EgyptDevRu\FilamentProjectPassport\Services\LicenseApiClient;
+use EgyptDevRu\FilamentProjectPassport\Support\DocumentationVisibility;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseApiGateway;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseErrorCode;
 use EgyptDevRu\FilamentProjectPassport\Support\PageAuthorizer;
@@ -11,6 +12,11 @@ use EgyptDevRu\FilamentProjectPassport\Support\SupportCoverage;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+
+beforeEach(function () {
+    // Scanner/page unit tests run under APP_ENV=testing; allow docs content unless a test opts out.
+    config()->set('filament-project-passport.docs.allow_non_production', true);
+});
 
 function makeAuthUser(string $email = 'user@example.com', bool $isAdmin = false): Authenticatable
 {
@@ -329,6 +335,62 @@ it('hides documentation when the license is unofficial', function () {
         ->and(DocumentationPage::getNavigationItems())->toBe([]);
 });
 
+it('does not call the license API while resolving documentation navigation', function () {
+    config()->set('filament-project-passport.authorization', [
+        'restricted_to_admins' => false,
+        'allowed_emails' => [],
+        'gate_name' => null,
+        'permission' => null,
+    ]);
+    config()->set('app.url', 'https://app.test');
+
+    $user = makeAuthUser('user@example.com');
+    auth()->login($user);
+
+    app(LicenseApiClient::class)->forgetCache();
+
+    Http::fake([
+        'en.egyptdev.ru/*' => Http::response([
+            'is_official' => true,
+        ], 200),
+    ]);
+
+    // Cold cache: nav must stay instant (no HTTP). Docs stay hidden until cache is warm.
+    expect(DocumentationPage::canAccess())->toBeFalse()
+        ->and(DocumentationPage::getNavigationItems())->toBe([]);
+
+    Http::assertNothingSent();
+});
+
+it('shows documentation navigation from cache without a second API call', function () {
+    config()->set('filament-project-passport.authorization', [
+        'restricted_to_admins' => false,
+        'allowed_emails' => [],
+        'gate_name' => null,
+        'permission' => null,
+    ]);
+    config()->set('app.url', 'https://app.test');
+
+    $user = makeAuthUser('user@example.com');
+    auth()->login($user);
+
+    Http::fake([
+        'en.egyptdev.ru/*' => Http::response([
+            'is_official' => true,
+            'project_name' => 'Example Project',
+        ], 200),
+    ]);
+
+    expect(app(LicenseApiClient::class)->isOfficial())->toBeTrue();
+
+    Http::fake([
+        'en.egyptdev.ru/*' => Http::response(['is_official' => false], 200),
+    ]);
+
+    expect(DocumentationPage::canAccess())->toBeTrue();
+    Http::assertNothingSent();
+});
+
 it('shows documentation when the license is official', function () {
     config()->set('filament-project-passport.authorization', [
         'restricted_to_admins' => false,
@@ -382,6 +444,52 @@ it('keeps documentation available when domain is verified but warranties expired
         ->and(DocumentationPage::canAccess())->toBeTrue();
 });
 
+it('hides documentation content outside production unless overridden', function () {
+    config()->set('filament-project-passport.docs.allow_non_production', false);
+
+    $docs = base_path('.docs');
+    File::deleteDirectory($docs);
+    File::ensureDirectoryExists($docs);
+    File::put($docs.'/secret.md', '# Secret docs');
+
+    expect(app()->environment())->not->toBe('production')
+        ->and(DocumentationVisibility::contentAllowed())->toBeFalse()
+        ->and(app(DocumentationScanner::class)->listMarkdownFiles())->toBeEmpty()
+        ->and(app(DocumentationScanner::class)->renderFile($docs.'/secret.md'))->toBe('');
+
+    $page = app(DocumentationPage::class);
+    expect($page->documentationContentAllowed())->toBeFalse();
+
+    $page->loadPageData();
+
+    expect($page->documents)->toBe([])
+        ->and($page->getActiveDocumentHtmlProperty())->toBe('');
+
+    File::deleteDirectory($docs);
+});
+
+it('allows documentation content outside production when configured', function () {
+    config()->set('filament-project-passport.docs.allow_non_production', true);
+
+    $docs = base_path('.docs');
+    File::deleteDirectory($docs);
+    File::ensureDirectoryExists($docs);
+    File::put($docs.'/guide.md', '# Guide');
+
+    expect(DocumentationVisibility::contentAllowed())->toBeTrue()
+        ->and(app(DocumentationScanner::class)->listMarkdownFiles())->toHaveCount(1);
+
+    File::deleteDirectory($docs);
+});
+
+it('allows documentation content in production without the non-production override', function () {
+    config()->set('filament-project-passport.docs.allow_non_production', false);
+    app()->detectEnvironment(fn (): string => 'production');
+
+    expect(app()->isProduction())->toBeTrue()
+        ->and(DocumentationVisibility::contentAllowed())->toBeTrue();
+});
+
 it('treats extended warranty as active egyptdev support', function () {
     $license = [
         'is_official' => true,
@@ -396,6 +504,7 @@ it('treats extended warranty as active egyptdev support', function () {
 it('denies page access when restricted and user is not an admin', function () {
     config()->set('filament-project-passport.authorization', [
         'restricted_to_admins' => true,
+        'restrict_non_production' => true,
         'allowed_emails' => [],
         'gate_name' => null,
         'permission' => null,
@@ -404,6 +513,57 @@ it('denies page access when restricted and user is not an admin', function () {
     $user = makeAuthUser('user@example.com', isAdmin: false);
 
     expect(PageAuthorizer::canAccess($user))->toBeFalse();
+});
+
+it('allows non-admin access outside production when restrict_non_production is not enabled', function () {
+    config()->set('filament-project-passport.authorization', [
+        'restricted_to_admins' => true,
+        'restrict_non_production' => false,
+        'allowed_emails' => [],
+        'gate_name' => null,
+        'permission' => null,
+    ]);
+
+    expect(app()->isProduction())->toBeFalse();
+
+    $user = makeAuthUser('user@example.com', isAdmin: false);
+
+    expect(PageAuthorizer::canAccess($user))->toBeTrue();
+});
+
+it('denies non-admin access in production even without restrict_non_production', function () {
+    config()->set('filament-project-passport.authorization', [
+        'restricted_to_admins' => true,
+        'restrict_non_production' => false,
+        'allowed_emails' => [],
+        'gate_name' => null,
+        'permission' => null,
+    ]);
+
+    app()->detectEnvironment(fn (): string => 'production');
+
+    $user = makeAuthUser('user@example.com', isAdmin: false);
+
+    expect(app()->isProduction())->toBeTrue()
+        ->and(PageAuthorizer::canAccess($user))->toBeFalse();
+});
+
+it('enforces admin restriction outside production when restrict_non_production is enabled', function () {
+    config()->set('filament-project-passport.authorization', [
+        'restricted_to_admins' => true,
+        'restrict_non_production' => true,
+        'allowed_emails' => [],
+        'gate_name' => null,
+        'permission' => null,
+    ]);
+
+    expect(app()->isProduction())->toBeFalse();
+
+    $admin = makeAuthUser('admin@example.com', isAdmin: true);
+    $user = makeAuthUser('user@example.com', isAdmin: false);
+
+    expect(PageAuthorizer::canAccess($admin))->toBeTrue()
+        ->and(PageAuthorizer::canAccess($user))->toBeFalse();
 });
 
 it('allows page access for allow-listed emails', function () {
