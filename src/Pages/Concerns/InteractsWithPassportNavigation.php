@@ -74,7 +74,7 @@ trait InteractsWithPassportNavigation
         return static::getNavigationLabel();
     }
 
-    public function getHeading(): string|Htmlable|null
+    public function getHeading(): string|Htmlable
     {
         return static::getNavigationLabel();
     }

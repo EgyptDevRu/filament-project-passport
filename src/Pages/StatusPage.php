@@ -53,7 +53,7 @@ class StatusPage extends Page
         return 'Support Status';
     }
 
-    public function getHeading(): string|Htmlable|null
+    public function getHeading(): string|Htmlable
     {
         return 'Support Status';
     }
