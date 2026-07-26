@@ -1,0 +1,174 @@
+name: Scheduled Release
+
+# Creates a patch release twice per week (Monday and Friday, near end of UTC day).
+#
+# Scheduled runs — only create when NONE exists in the window:
+#   Monday slot  → create only if no release Sat–Mon
+#   Friday slot  → create only if no release Tue–Fri
+#
+# Manual "Run workflow" — always creates a new patch release (forced).
+
+on:
+  schedule:
+    - cron: '0 23 * * 1,5'
+  workflow_dispatch:
+    # always ships a new release.
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scheduled-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Ensure scheduled release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Decide whether to release
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TZ: UTC
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          # Manual trigger always creates a new release.
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            TODAY="$(date -u +%Y-%m-%d)"
+            echo "Manual run — forcing a new release (${TODAY} UTC)."
+            echo "today=${TODAY}" >> "${GITHUB_OUTPUT}"
+            echo "slot=manual" >> "${GITHUB_OUTPUT}"
+            echo "window_start=${TODAY}" >> "${GITHUB_OUTPUT}"
+            echo "window_end=${TODAY}" >> "${GITHUB_OUTPUT}"
+            echo "should_release=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          # If this scheduled job slipped into the next UTC morning, still count
+          # it as the previous day's release slot (covers 23:00 cron delayed to 00:xx).
+          HOUR="$(date -u +%H)"
+          HOUR=$((10#${HOUR}))
+          if [ "${HOUR}" -lt 12 ]; then
+            SLOT_DAY="$(date -u -d 'yesterday' +%Y-%m-%d)"
+            echo "Runner UTC hour is ${HOUR} — attributing slot day to yesterday (${SLOT_DAY})."
+          else
+            SLOT_DAY="$(date -u +%Y-%m-%d)"
+          fi
+
+          # ISO weekday: 1=Mon … 7=Sun
+          DOW="$(date -u -d "${SLOT_DAY}" +%u)"
+          DOW=$((10#${DOW}))
+
+          # Map the slot to a release window.
+          # Monday → Sat–Mon
+          # Friday → Tue–Fri
+          # Weekend fallout / mid-week → nearest matching window
+          if [ "${DOW}" -eq 1 ]; then
+            WINDOW_START="$(date -u -d "${SLOT_DAY} - 2 days" +%Y-%m-%d)"
+            WINDOW_END="${SLOT_DAY}"
+            SLOT_NAME="monday"
+          elif [ "${DOW}" -eq 5 ]; then
+            WINDOW_START="$(date -u -d "${SLOT_DAY} - 3 days" +%Y-%m-%d)"
+            WINDOW_END="${SLOT_DAY}"
+            SLOT_NAME="friday"
+          elif [ "${DOW}" -eq 6 ] || [ "${DOW}" -eq 7 ]; then
+            # Late Friday run that landed on the weekend afternoon: still Friday window.
+            while [ "$(date -u -d "${SLOT_DAY}" +%u)" != "5" ]; do
+              SLOT_DAY="$(date -u -d "${SLOT_DAY} - 1 day" +%Y-%m-%d)"
+            done
+            WINDOW_START="$(date -u -d "${SLOT_DAY} - 3 days" +%Y-%m-%d)"
+            WINDOW_END="${SLOT_DAY}"
+            SLOT_NAME="friday"
+          else
+            # Tue–Thu odd delay: Friday window ending this week's Friday.
+            DAYS_TO_FRI=$((5 - DOW))
+            WINDOW_END="$(date -u -d "${SLOT_DAY} + ${DAYS_TO_FRI} days" +%Y-%m-%d)"
+            WINDOW_START="$(date -u -d "${WINDOW_END} - 3 days" +%Y-%m-%d)"
+            SLOT_NAME="friday"
+          fi
+
+          echo "today=${WINDOW_END}" >> "${GITHUB_OUTPUT}"
+          echo "slot=${SLOT_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "window_start=${WINDOW_START}" >> "${GITHUB_OUTPUT}"
+          echo "window_end=${WINDOW_END}" >> "${GITHUB_OUTPUT}"
+          echo "Slot=${SLOT_NAME}; window ${WINDOW_START} → ${WINDOW_END} (UTC)"
+
+          HAS_IN_WINDOW=0
+          while IFS= read -r published; do
+            [ -z "${published}" ] && continue
+            local_day="$(TZ=UTC date -d "${published}" +%Y-%m-%d 2>/dev/null || true)"
+            [ -z "${local_day}" ] && continue
+
+            if [[ "${local_day}" < "${WINDOW_START}" || "${local_day}" > "${WINDOW_END}" ]]; then
+              continue
+            fi
+
+            HAS_IN_WINDOW=1
+            echo "Found release on ${local_day} (published ${published}) inside window."
+            break
+          done < <(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=50" --jq '.[].published_at' 2>/dev/null || true)
+
+          if [ "${HAS_IN_WINDOW}" -eq 1 ]; then
+            echo "A release already exists in ${WINDOW_START}→${WINDOW_END}. Skipping."
+            echo "should_release=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          echo "No release in window — will create one."
+          echo "should_release=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Compute next patch version
+        id: version
+        if: steps.gate.outputs.should_release == 'true'
+        run: |
+          set -euo pipefail
+
+          latest="$(git tag -l 'v*.*.*' --sort=-v:refname | head -n 1 || true)"
+          if [ -z "${latest}" ]; then
+            latest="$(git tag -l '*.*.*' --sort=-v:refname | head -n 1 || true)"
+          fi
+
+          if [ -z "${latest}" ]; then
+            next="v1.0.0"
+          else
+            bare="${latest#v}"
+            IFS='.' read -r major minor patch <<< "${bare}"
+            patch=$((patch + 1))
+            next="v${major}.${minor}.${patch}"
+          fi
+
+          echo "latest=${latest:-none}" >> "${GITHUB_OUTPUT}"
+          echo "next=${next}" >> "${GITHUB_OUTPUT}"
+          echo "Next release tag: ${next} (previous: ${latest:-none})"
+
+      - name: Create GitHub release
+        if: steps.gate.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          NEXT="${{ steps.version.outputs.next }}"
+          SLOT="${{ steps.gate.outputs.slot }}"
+          WINDOW_START="${{ steps.gate.outputs.window_start }}"
+          WINDOW_END="${{ steps.gate.outputs.window_end }}"
+
+          NOTES="Automated ${SLOT} release (${WINDOW_END} UTC). Window ${WINDOW_START} → ${WINDOW_END}."
+
+          gh release create "${NEXT}" \
+            --target "${{ github.event.repository.default_branch || 'main' }}" \
+            --title "${NEXT}" \
+            --notes "${NOTES}"
+
+          echo "Created release ${NEXT}"

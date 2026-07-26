@@ -1,68 +1,105 @@
-# :package_description
+# Filament Project Passport
 
-[![Latest Version on Packagist](https://img.shields.io/packagist/v/:vendor_slug/:package_slug.svg?style=flat-square)](https://packagist.org/packages/:vendor_slug/:package_slug)
-[![GitHub Tests Action Status](https://github.com/spatie/package-skeleton-laravel/actions/workflows/run-tests.yml/badge.svg)](https://github.com/:vendor_slug/:package_slug/actions?query=workflow%3Arun-tests+branch%3Amain)
-[![GitHub Code Style Action Status](https://github.com/spatie/package-skeleton-laravel/actions/workflows/fix-php-code-style-issues.yml/badge.svg)](https://github.com/:vendor_slug/:package_slug/actions?query=workflow%3A"Fix+PHP+code+style+issues"+branch%3Amain)
-[![Total Downloads](https://img.shields.io/packagist/dt/:vendor_slug/:package_slug.svg?style=flat-square)](https://packagist.org/packages/:vendor_slug/:package_slug)
-<!--delete-->
----
-This repo can be used to scaffold a Laravel package. Follow these steps to get started:
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/egyptdevru/filament-project-passport.svg?style=flat-square)](https://packagist.org/packages/egyptdevru/filament-project-passport)
+[![Total Downloads](https://img.shields.io/packagist/dt/egyptdevru/filament-project-passport.svg?style=flat-square)](https://packagist.org/packages/egyptdevru/filament-project-passport)
 
-1. Press the "Use this template" button at the top of this repo to create a new repo with the contents of this skeleton.
-2. Run "php ./configure.php" to run a script that will replace all placeholders throughout all the files.
-3. Have fun creating your package.
-4. If you need help creating a package, consider picking up our <a href="https://laravelpackage.training">Laravel Package Training</a> video course.
----
-<!--/delete-->
-This is where your description should go. Limit it to a paragraph or two. Consider adding a small example.
+Built for **existing EgyptDev Studio customers**.
 
-## Support us
+Support status, documentation, and other studio-backed features only work when this install has an **active EgyptDev Studio contract**. You can still install the package without one, but those features stay locked.
 
-[<img src="https://github-ads.s3.eu-central-1.amazonaws.com/:package_name.jpg?t=1" width="419px" />](https://spatie.be/github-ad-click/:package_name)
+## Features
 
-We invest a lot of resources into creating [best in class open source packages](https://spatie.be/open-source). You can support us by [buying one of our paid products](https://spatie.be/open-source/support-us).
+- Auto-registers a **Developer Support** navigation group (Status + Documentation) on every Filament panel — no `PanelProvider` edits required
+- Support Status page for EgyptDev development / maintenance / support coverage
+- Recursive `.docs/**/*.md` viewer with sidebar navigation, Mermaid diagrams, and in-viewer Markdown links
+- Configurable navigation label/icon/sort/group and authorization rules
+- License Audit for Composer package commercial-license compatibility
+- Dependency Audit for outdated packages, security advisories, Laravel & Filament
 
-We highly appreciate you sending us a postcard from your hometown, mentioning which of our package(s) you are using. You'll find our address on [our contact page](https://spatie.be/about-us). We publish all received postcards on [our virtual postcard wall](https://spatie.be/open-source/postcards).
+## Requirements
+
+- PHP 8.2+
+- Laravel 10 / 11 / 12+
+- Filament `^3.0` | `^4.0` | `^5.0`
 
 ## Installation
 
-You can install the package via composer:
+```bash
+composer require egyptdevru/filament-project-passport:"*"
+```
+
+This installs with a `*` version constraint so Composer always resolves the latest release on update.
+
+Publish the config (UI + authorization only):
 
 ```bash
-composer require :vendor_slug/:package_slug
+php artisan vendor:publish --tag="filament-project-passport-config"
 ```
 
-You can publish and run the migrations with:
+Optionally publish views:
 
 ```bash
-php artisan vendor:publish --tag=":package_slug-migrations"
-php artisan migrate
+php artisan vendor:publish --tag="filament-project-passport-views"
 ```
 
-You can publish the config file with:
+After install, open any Filament panel — the **Developer Support** group appears at the end of the navigation with **Status**, **Documentation**, **License Audit**, and **Dependency Audit**.
+
+Artisan commands and their schedule entries are registered by the package automatically. You do **not** need to add them to your app’s `routes/console.php` / `Kernel` schedule. You only need Laravel’s normal scheduler cron on the server (see below).
+
+## Configuration
+
+### Authorization evaluation order
+
+1. If `gate_name` is set and defined, that Gate decides access
+2. If `permission` is set, Spatie / `can()` is checked
+3. If `allowed_emails` is non-empty, only those emails may access
+4. If `restricted_to_admins` is `true`, only admin-like users (flags / roles) may access
+5. Otherwise, any authenticated Filament user may access
+
+## Local documentation
+
+Place Markdown files in your application root:
+
+```text
+.docs/
+  getting-started.md
+  deployment/
+    checklist.md
+```
+
+They appear in a sidebar on the **Documentation** page. Documentation is shown only when EgyptDev support status allows it.
+
+## Scheduled audits
+
+These commands are auto-registered with the package:
 
 ```bash
-php artisan vendor:publish --tag=":package_slug-config"
+# Refresh Composer dependency audit (skips when cache is less than 7 days; Sundays always refresh)
+php artisan filament-project-passport:refresh-dependency-audit
+
+# Force dependency audit refresh
+php artisan filament-project-passport:refresh-dependency-audit --force
+
+# Refresh Composer license audit (skips when cache is younger than 14 days)
+php artisan filament-project-passport:refresh-license-audit
+
+# Force license audit refresh
+php artisan filament-project-passport:refresh-license-audit --force
 ```
 
-This is the contents of the published config file:
+The package also schedules them automatically (app timezone):
 
-```php
-return [
-];
-```
+| Job                                                  | When                                                                                                    |
+|------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| `filament-project-passport:refresh-dependency-audit` | Every day at `03:00` (Sunday always refreshes; other days only if the cache is missing or ≥ 7 days old) |
+| `filament-project-passport:refresh-license-audit`    | Every day at `03:00` (runs a refresh only if the cache is missing or ≥ 14 days old)                     |
 
-Optionally, you can publish the views using
+Dependency Audit invokes Composer via project `composer.phar` (if present) or the global `composer` binary. Place a `composer.phar` in the application root when the server has no global Composer.
 
-```bash
-php artisan vendor:publish --tag=":package_slug-views"
-```
+Ensure the host application runs Laravel’s scheduler, for example:
 
-## Usage
-
-```php
-$:variable = new VendorName\Skeleton();
-echo $:variable->echoPhrase('Hello, VendorName!');
+```cron
+* * * * * cd /path-to-your-project && php artisan schedule:run >> /dev/null 2>&1
 ```
 
 ## Testing
@@ -75,18 +112,9 @@ composer test
 
 Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed recently.
 
-## Contributing
-
-Please see [CONTRIBUTING](CONTRIBUTING.md) for details.
-
-## Security Vulnerabilities
-
-Please review [our security policy](../../security/policy) on how to report security vulnerabilities.
-
 ## Credits
 
-- [:author_name](https://github.com/:author_username)
-- [All Contributors](../../contributors)
+- [Roman Chutchev](https://github.com/RChutchev)
 
 ## License
 
