@@ -40,6 +40,7 @@ class LicenseAuditPage extends Page
     public string $sortColumn = 'name';
 
     public string $sortDirection = 'asc';
+
     private mixed $incompatiblePackages;
 
     public function getView(): string

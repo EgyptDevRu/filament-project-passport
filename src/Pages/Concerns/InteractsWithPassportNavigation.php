@@ -69,12 +69,12 @@ trait InteractsWithPassportNavigation
         return [$item];
     }
 
-    public function getTitle(): string | Htmlable
+    public function getTitle(): string|Htmlable
     {
         return static::getNavigationLabel();
     }
 
-    public function getHeading(): string | Htmlable | null
+    public function getHeading(): string|Htmlable|null
     {
         return static::getNavigationLabel();
     }

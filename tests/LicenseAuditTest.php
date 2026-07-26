@@ -1,9 +1,10 @@
 <?php
 
+use EgyptDevRu\FilamentProjectPassport\Pages\LicenseAuditPage;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerLicenseAuditor;
+use EgyptDevRu\FilamentProjectPassport\Support\CheckAge;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseStatus;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\File;
 
 it('classifies commercial-friendly licenses as compatible', function () {
     expect(LicenseStatus::classify(['MIT']))->toBe(LicenseStatus::COMPATIBLE)
@@ -114,7 +115,7 @@ it('requires license audit refresh when cache is older than fourteen days', func
 });
 
 it('formats last check age for the license audit page', function () {
-    $page = app(\EgyptDevRu\FilamentProjectPassport\Pages\LicenseAuditPage::class);
+    $page = app(LicenseAuditPage::class);
 
     $page->checkedAt = now()->toIso8601String();
     expect($page->lastCheckSummary())->toBe('Last check: just now');
@@ -130,7 +131,7 @@ it('formats last check age for the license audit page', function () {
 });
 
 it('labels check ages consistently', function () {
-    expect(\EgyptDevRu\FilamentProjectPassport\Support\CheckAge::label(null))->toBe('unknown')
-        ->and(\EgyptDevRu\FilamentProjectPassport\Support\CheckAge::label(now()->subMinutes(12)->toIso8601String()))
+    expect(CheckAge::label(null))->toBe('unknown')
+        ->and(CheckAge::label(now()->subMinutes(12)->toIso8601String()))
         ->toBe('12 minutes ago');
 });

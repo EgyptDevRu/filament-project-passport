@@ -4,6 +4,7 @@ namespace EgyptDevRu\FilamentProjectPassport\Services;
 
 use Composer\InstalledVersions;
 use EgyptDevRu\FilamentProjectPassport\Support\ComposerBinary;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
 
@@ -93,7 +94,7 @@ final class ComposerDependencyAuditor
         }
 
         try {
-            $checked = \Illuminate\Support\Carbon::parse($cached['checked_at'])->startOfDay();
+            $checked = Carbon::parse($cached['checked_at'])->startOfDay();
         } catch (Throwable) {
             return true;
         }

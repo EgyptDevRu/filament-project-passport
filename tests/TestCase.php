@@ -2,9 +2,9 @@
 
 namespace EgyptDevRu\FilamentProjectPassport\Tests;
 
+use EgyptDevRu\FilamentProjectPassport\FilamentProjectPassportServiceProvider;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Orchestra\Testbench\TestCase as Orchestra;
-use EgyptDevRu\FilamentProjectPassport\FilamentProjectPassportServiceProvider;
 
 class TestCase extends Orchestra
 {

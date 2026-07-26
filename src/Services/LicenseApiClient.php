@@ -163,7 +163,7 @@ final class LicenseApiClient
                 'endpoint' => $endpoint,
                 'sent_host' => $host,
             ]);
-        } catch (ConnectionException | RequestException | Throwable $exception) {
+        } catch (ConnectionException|RequestException|Throwable $exception) {
             $errorCode = $this->classifyException($exception);
 
             return $this->undefinedFallback(

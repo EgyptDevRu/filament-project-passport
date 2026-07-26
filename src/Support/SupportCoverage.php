@@ -24,7 +24,7 @@ final class SupportCoverage
      *
      * @param  array<string, mixed>  $license
      */
-    public static function isSupportActive(array $license, CarbonInterface|null $now = null): bool
+    public static function isSupportActive(array $license, ?CarbonInterface $now = null): bool
     {
         if (! self::isDomainVerified($license)) {
             return false;
@@ -39,12 +39,12 @@ final class SupportCoverage
      *
      * @param  array<string, mixed>  $license
      */
-    public static function isVerifiedWithoutActiveSupport(array $license, CarbonInterface|null $now = null): bool
+    public static function isVerifiedWithoutActiveSupport(array $license, ?CarbonInterface $now = null): bool
     {
         return self::isDomainVerified($license) && ! self::isSupportActive($license, $now);
     }
 
-    public static function isDateActive(mixed $date, CarbonInterface|null $now = null): bool
+    public static function isDateActive(mixed $date, ?CarbonInterface $now = null): bool
     {
         if ($date === null) {
             return false;

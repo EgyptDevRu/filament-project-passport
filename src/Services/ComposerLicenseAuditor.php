@@ -4,6 +4,7 @@ namespace EgyptDevRu\FilamentProjectPassport\Services;
 
 use Composer\InstalledVersions;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseStatus;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 use Throwable;
@@ -100,7 +101,7 @@ final class ComposerLicenseAuditor
         }
 
         try {
-            $checked = \Illuminate\Support\Carbon::parse($cached['checked_at'])->startOfDay();
+            $checked = Carbon::parse($cached['checked_at'])->startOfDay();
         } catch (Throwable) {
             return true;
         }

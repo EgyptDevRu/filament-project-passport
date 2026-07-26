@@ -1,8 +1,13 @@
 <?php
 
+use EgyptDevRu\FilamentProjectPassport\Pages\DocumentationPage;
+use EgyptDevRu\FilamentProjectPassport\Pages\StatusPage;
 use EgyptDevRu\FilamentProjectPassport\Services\DocumentationScanner;
 use EgyptDevRu\FilamentProjectPassport\Services\LicenseApiClient;
+use EgyptDevRu\FilamentProjectPassport\Support\LicenseApiGateway;
+use EgyptDevRu\FilamentProjectPassport\Support\LicenseErrorCode;
 use EgyptDevRu\FilamentProjectPassport\Support\PageAuthorizer;
+use EgyptDevRu\FilamentProjectPassport\Support\SupportCoverage;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -57,7 +62,7 @@ it('resolves the license endpoint outside of config', function () {
     expect($reflection->hasConstant('API_BASE_DOMAIN'))->toBeFalse()
         ->and($reflection->hasConstant('API_ENDPOINT_PATH'))->toBeFalse()
         ->and($client->endpoint())->toBe('https://en.egyptdev.ru/api/v1/license-check')
-        ->and(\EgyptDevRu\FilamentProjectPassport\Support\LicenseApiGateway::origin())->toBe('https://en.egyptdev.ru')
+        ->and(LicenseApiGateway::origin())->toBe('https://en.egyptdev.ru')
         ->and(config('filament-project-passport'))->not->toHaveKey('api_url')
         ->and(config('filament-project-passport'))->not->toHaveKey('api_domain')
         ->and(config('filament-project-passport'))->not->toHaveKey('license_endpoint');
@@ -101,7 +106,7 @@ it('fails gracefully when the license api is unreachable', function () {
 
     expect($result['is_official'])->toBeFalse()
         ->and($result['request_failed'])->toBeTrue()
-        ->and($result['error_code'])->toBe(\EgyptDevRu\FilamentProjectPassport\Support\LicenseErrorCode::HTTP_500)
+        ->and($result['error_code'])->toBe(LicenseErrorCode::HTTP_500)
         ->and($result['project_name'])->toBeNull()
         ->and(app(LicenseApiClient::class)->allowsDocumentation())->toBeFalse();
 });
@@ -116,8 +121,8 @@ it('marks cloudflare failures as undefined status with error codes', function ()
     $cloudflare = app(LicenseApiClient::class)->fetch();
 
     expect($cloudflare['request_failed'])->toBeTrue()
-        ->and($cloudflare['error_code'])->toBe(\EgyptDevRu\FilamentProjectPassport\Support\LicenseErrorCode::CF_BLOCK)
-        ->and(\EgyptDevRu\FilamentProjectPassport\Support\LicenseErrorCode::isUndefinedStatus($cloudflare))->toBeTrue()
+        ->and($cloudflare['error_code'])->toBe(LicenseErrorCode::CF_BLOCK)
+        ->and(LicenseErrorCode::isUndefinedStatus($cloudflare))->toBeTrue()
         ->and(app(LicenseApiClient::class)->allowsDocumentation())->toBeFalse();
 });
 
@@ -130,7 +135,7 @@ it('marks invalid json responses as undefined status', function () {
 
     $invalidJson = app(LicenseApiClient::class)->fetch();
 
-    expect($invalidJson['error_code'])->toBe(\EgyptDevRu\FilamentProjectPassport\Support\LicenseErrorCode::JSON_INVALID)
+    expect($invalidJson['error_code'])->toBe(LicenseErrorCode::JSON_INVALID)
         ->and($invalidJson['request_failed'])->toBeTrue()
         ->and(app(LicenseApiClient::class)->allowsDocumentation())->toBeFalse();
 });
@@ -279,9 +284,9 @@ it('builds a nested navigation tree for subfolders', function () {
     $docs = base_path('.docs');
 
     File::makeDirectory($docs.'/API/nested', 0755, true);
-    File::put($docs.'/00_index.md', "# Index");
-    File::put($docs.'/API/01_overview.md', "# Overview");
-    File::put($docs.'/API/nested/deep.md', "# Deep");
+    File::put($docs.'/00_index.md', '# Index');
+    File::put($docs.'/API/01_overview.md', '# Overview');
+    File::put($docs.'/API/nested/deep.md', '# Deep');
 
     $scanner = app(DocumentationScanner::class);
     $tree = $scanner->navigationTree();
@@ -319,8 +324,8 @@ it('hides documentation when the license is unofficial', function () {
     ]);
 
     expect(app(LicenseApiClient::class)->isOfficial())->toBeFalse()
-        ->and(\EgyptDevRu\FilamentProjectPassport\Pages\DocumentationPage::canAccess())->toBeFalse()
-        ->and(\EgyptDevRu\FilamentProjectPassport\Pages\DocumentationPage::getNavigationItems())->toBe([]);
+        ->and(DocumentationPage::canAccess())->toBeFalse()
+        ->and(DocumentationPage::getNavigationItems())->toBe([]);
 });
 
 it('shows documentation when the license is official', function () {
@@ -343,7 +348,7 @@ it('shows documentation when the license is official', function () {
     ]);
 
     expect(app(LicenseApiClient::class)->isOfficial())->toBeTrue()
-        ->and(\EgyptDevRu\FilamentProjectPassport\Pages\DocumentationPage::canAccess())->toBeTrue();
+        ->and(DocumentationPage::canAccess())->toBeTrue();
 });
 
 it('keeps documentation available when domain is verified but warranties expired', function () {
@@ -371,9 +376,9 @@ it('keeps documentation available when domain is verified but warranties expired
 
     expect($license['is_official'])->toBeTrue()
         ->and($license['extended_support_warranty_until'])->toBe('2020-06-01')
-        ->and(\EgyptDevRu\FilamentProjectPassport\Support\SupportCoverage::isSupportActive($license))->toBeFalse()
-        ->and(\EgyptDevRu\FilamentProjectPassport\Support\SupportCoverage::isVerifiedWithoutActiveSupport($license))->toBeTrue()
-        ->and(\EgyptDevRu\FilamentProjectPassport\Pages\DocumentationPage::canAccess())->toBeTrue();
+        ->and(SupportCoverage::isSupportActive($license))->toBeFalse()
+        ->and(SupportCoverage::isVerifiedWithoutActiveSupport($license))->toBeTrue()
+        ->and(DocumentationPage::canAccess())->toBeTrue();
 });
 
 it('treats extended warranty as active egyptdev support', function () {
@@ -383,8 +388,8 @@ it('treats extended warranty as active egyptdev support', function () {
         'extended_support_warranty_until' => now()->addMonth()->toDateString(),
     ];
 
-    expect(\EgyptDevRu\FilamentProjectPassport\Support\SupportCoverage::isSupportActive($license))->toBeTrue()
-        ->and(\EgyptDevRu\FilamentProjectPassport\Support\SupportCoverage::isDomainVerified($license))->toBeTrue();
+    expect(SupportCoverage::isSupportActive($license))->toBeTrue()
+        ->and(SupportCoverage::isDomainVerified($license))->toBeTrue();
 });
 
 it('denies page access when restricted and user is not an admin', function () {
@@ -423,7 +428,7 @@ it('exposes a developer log payload for the status easter egg', function () {
 
     config()->set('app.url', 'https://app.test');
 
-    $page = app(\EgyptDevRu\FilamentProjectPassport\Pages\StatusPage::class);
+    $page = app(StatusPage::class);
     $page->license = app(LicenseApiClient::class)->fetch();
 
     $log = $page->getDeveloperLog();
