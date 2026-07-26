@@ -53,7 +53,7 @@ final class ComposerBinary
             || str_ends_with($normalized, 'cgi.exe')
             || str_ends_with($normalized, 'fpm.exe');
 
-        if (! $isNonCli && $binary !== '') {
+        if (! $isNonCli) {
             return $binary;
         }
 

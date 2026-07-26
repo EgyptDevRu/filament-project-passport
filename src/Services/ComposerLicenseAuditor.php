@@ -293,7 +293,7 @@ final class ComposerLicenseAuditor
 
         try {
             foreach (InstalledVersions::getInstalledPackages() as $name) {
-                if (! is_string($name) || $name === '' || $name === '__root__') {
+                if ($name === '' || $name === '__root__') {
                     continue;
                 }
 

@@ -41,8 +41,6 @@ class LicenseAuditPage extends Page
 
     public string $sortDirection = 'asc';
 
-    private mixed $incompatiblePackages;
-
     public function getView(): string
     {
         return 'filament-project-passport::pages.license-audit';
@@ -170,7 +168,7 @@ class LicenseAuditPage extends Page
 
     public function hasIncompatiblePackages(): bool
     {
-        return $this->incompatiblePackages !== [];
+        return $this->getIncompatiblePackagesProperty() !== [];
     }
 
     public function statusBadgeClass(string $status): string

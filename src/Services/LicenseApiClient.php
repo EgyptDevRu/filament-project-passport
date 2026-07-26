@@ -4,8 +4,6 @@ namespace EgyptDevRu\FilamentProjectPassport\Services;
 
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseApiGateway;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseErrorCode;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -163,7 +161,7 @@ final class LicenseApiClient
                 'endpoint' => $endpoint,
                 'sent_host' => $host,
             ]);
-        } catch (ConnectionException|RequestException|Throwable $exception) {
+        } catch (Throwable $exception) {
             $errorCode = $this->classifyException($exception);
 
             return $this->undefinedFallback(
@@ -244,7 +242,7 @@ final class LicenseApiClient
             return LicenseErrorCode::NET_TIMEOUT;
         }
 
-        if ($exception instanceof ConnectionException) {
+        if ($exception instanceof \Illuminate\Http\Client\ConnectionException) {
             return LicenseErrorCode::NET_CONNECTION;
         }
 

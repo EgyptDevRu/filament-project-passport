@@ -82,14 +82,14 @@ final class ComposerDependencyAuditor
      */
     public function shouldRefresh(int $days = self::CACHE_FRESH_DAYS): bool
     {
-        /** @var array{checked_at?: mixed}|null $cached */
+        /** @var array{checked_at?: mixed, error?: mixed}|null $cached */
         $cached = Cache::get($this->cacheKey());
 
         if (! is_array($cached) || ! isset($cached['checked_at']) || ! is_string($cached['checked_at']) || $cached['checked_at'] === '') {
             return true;
         }
 
-        if (! empty($cached['error'])) {
+        if (array_key_exists('error', $cached) && filled($cached['error'])) {
             return true;
         }
 

@@ -280,17 +280,9 @@ final class DocumentationScanner
         array $knownByRelative,
         string $currentRelative,
     ): void {
-        $anchors = [];
-
-        foreach ($root->getElementsByTagName('a') as $anchor) {
-            $anchors[] = $anchor;
-        }
-
-        foreach ($anchors as $anchor) {
-            if (! $anchor instanceof DOMElement) {
-                continue;
-            }
-
+        foreach ($root->getElementsByTagName('a') as $node) {
+            /** @var DOMElement $anchor */
+            $anchor = $node;
             $href = $anchor->getAttribute('href');
 
             if ($href === '' || str_starts_with($href, '#')) {
@@ -331,17 +323,16 @@ final class DocumentationScanner
 
     private function transformMermaidBlocks(DOMElement $root, DOMDocument $dom): void
     {
+        // Snapshot nodes first — the live NodeList mutates while we replace <pre> tags.
         $pres = [];
 
-        foreach ($root->getElementsByTagName('pre') as $pre) {
-            $pres[] = $pre;
+        foreach ($root->getElementsByTagName('pre') as $node) {
+            $pres[] = $node;
         }
 
-        foreach ($pres as $pre) {
-            if (! $pre instanceof DOMElement) {
-                continue;
-            }
-
+        foreach ($pres as $node) {
+            /** @var DOMElement $pre */
+            $pre = $node;
             $code = null;
 
             foreach ($pre->childNodes as $child) {

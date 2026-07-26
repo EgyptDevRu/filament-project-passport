@@ -19,7 +19,7 @@ class RefreshDependencyAuditCommand extends Command
             $current = $auditor->audit();
             $this->info(sprintf(
                 'Dependency audit cache is still fresh (checked at %s). Skipping.',
-                (string) ($current['checked_at'] ?? 'unknown'),
+                $current['checked_at'],
             ));
 
             return self::SUCCESS;

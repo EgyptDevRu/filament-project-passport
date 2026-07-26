@@ -17,7 +17,7 @@ class RefreshLicenseAuditCommand extends Command
             $current = $auditor->audit();
             $this->info(sprintf(
                 'License audit cache is still fresh (checked at %s). Skipping.',
-                (string) ($current['checked_at'] ?? 'unknown'),
+                $current['checked_at'],
             ));
 
             return self::SUCCESS;
@@ -29,8 +29,8 @@ class RefreshLicenseAuditCommand extends Command
 
         $this->info(sprintf(
             'Done. %d packages audited. Checked at %s',
-            count($result['packages'] ?? []),
-            (string) ($result['checked_at'] ?? 'unknown'),
+            count($result['packages']),
+            $result['checked_at'],
         ));
 
         return self::SUCCESS;

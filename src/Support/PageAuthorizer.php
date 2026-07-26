@@ -26,11 +26,14 @@ final class PageAuthorizer
         $permission = $config['permission'] ?? null;
 
         if (is_string($permission) && $permission !== '') {
-            if (method_exists($user, 'can') && $user->can($permission)) {
+            $hasCan = method_exists($user, 'can');
+            $hasPermissionTo = method_exists($user, 'hasPermissionTo');
+
+            if ($hasCan && $user->can($permission)) {
                 return true;
             }
 
-            if (method_exists($user, 'hasPermissionTo')) {
+            if ($hasPermissionTo) {
                 try {
                     return (bool) $user->hasPermissionTo($permission);
                 } catch (\Throwable) {
@@ -38,8 +41,8 @@ final class PageAuthorizer
                 }
             }
 
-            // Permission configured but user cannot be checked → deny.
-            if (method_exists($user, 'can') || method_exists($user, 'hasPermissionTo')) {
+            // Permission configured but can() denied (or only can() exists).
+            if ($hasCan) {
                 return false;
             }
         }

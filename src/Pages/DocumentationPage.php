@@ -145,7 +145,7 @@ class DocumentationPage extends Page
     protected function isKnownDocumentKey(string $key): bool
     {
         foreach ($this->documents as $document) {
-            if (($document['key'] ?? null) === $key) {
+            if ($document['key'] === $key) {
                 return true;
             }
         }
@@ -157,7 +157,7 @@ class DocumentationPage extends Page
     {
         $document = collect($this->documents)->firstWhere('key', $documentKey);
 
-        if ($document === null || ($document['folder'] ?? '') === '') {
+        if ($document === null || $document['folder'] === '') {
             return;
         }
 

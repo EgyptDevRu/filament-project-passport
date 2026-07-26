@@ -60,11 +60,8 @@ trait InteractsWithPassportNavigation
             ->group(static::getNavigationGroup())
             ->sort($resolvedSort)
             ->url(static::getUrl())
-            ->isActiveWhen(fn (): bool => request()->routeIs(static::getRouteName()));
-
-        if (method_exists($item, 'key')) {
-            $item->key(static::class);
-        }
+            ->isActiveWhen(fn (): bool => request()->routeIs(static::getRouteName()))
+            ->key(static::class);
 
         return [$item];
     }
