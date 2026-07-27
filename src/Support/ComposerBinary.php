@@ -170,7 +170,32 @@ final class ComposerBinary
         $env['COMPOSER_NO_INTERACTION'] = '1';
         $env['COMPOSER_DISABLE_XDEBUG_WARN'] = '1';
 
+        // PHP-FPM workers commonly run with a stripped environment that has
+        // no HOME set (unlike an interactive SSH shell), which makes Composer
+        // refuse to run at all: "The HOME or COMPOSER_HOME environment
+        // variable must be set for composer to run correctly." Point it at a
+        // directory this app already controls instead of depending on the
+        // web server's process environment.
+        if (($env['HOME'] ?? '') === '' && ($env['COMPOSER_HOME'] ?? '') === '') {
+            $env['COMPOSER_HOME'] = self::fallbackComposerHome();
+        }
+
         return $env;
+    }
+
+    /**
+     * Writable Composer home used only when the host process has neither
+     * HOME nor COMPOSER_HOME set.
+     */
+    private static function fallbackComposerHome(): string
+    {
+        $directory = storage_path('app/filament-project-passport/composer-home');
+
+        if (! is_dir($directory)) {
+            @mkdir($directory, 0755, true);
+        }
+
+        return $directory;
     }
 
     /**
