@@ -54,10 +54,121 @@
                         wire:key="fi-pp-doc-{{ $this->activeDocumentKey }}"
                         class="fi-pp-markdown"
                         x-data="{
+                            // Defined inline (not in a <script> tag) on purpose: Filament
+                            // panels navigate between pages via Livewire's wire:navigate,
+                            // which swaps the DOM without a real page load, so a plain
+                            // <script> tag here would only ever run once per browser
+                            // session (or never, if this page wasn't the first one
+                            // visited). Alpine re-runs x-init for every element it mounts
+                            // regardless of how it entered the DOM, so putting the loader
+                            // here is what makes it reliably fire on every doc visit.
+                            ensureMermaid() {
+                                if (window.mermaid) {
+                                    return Promise.resolve(window.mermaid);
+                                }
+
+                                if (window.__fiPpMermaidLoading) {
+                                    return window.__fiPpMermaidLoading;
+                                }
+
+                                const version = {!! Illuminate\Support\Js::from(config('filament-project-passport.docs.mermaid.version')) !!};
+                                const integrity = {!! Illuminate\Support\Js::from(config('filament-project-passport.docs.mermaid.integrity')) !!};
+                                const cdn = `https://cdn.jsdelivr.net/npm/mermaid@${version}/dist/mermaid.min.js`;
+
+                                window.__fiPpMermaidLoading = new Promise((resolve, reject) => {
+                                    const load = (withIntegrity) => {
+                                        const script = document.createElement('script');
+                                        script.src = cdn;
+
+                                        if (withIntegrity) {
+                                            script.integrity = integrity;
+                                            script.crossOrigin = 'anonymous';
+                                            script.referrerPolicy = 'no-referrer';
+                                        }
+
+                                        script.async = true;
+                                        script.onload = () => {
+                                            if (! window.mermaid) {
+                                                script.remove();
+
+                                                if (withIntegrity) {
+                                                    load(false);
+
+                                                    return;
+                                                }
+
+                                                reject(new Error('Failed to load Mermaid'));
+
+                                                return;
+                                            }
+
+                                            const dark = document.documentElement.classList.contains('dark');
+
+                                            window.mermaid.initialize({
+                                                startOnLoad: false,
+                                                theme: dark ? 'dark' : 'default',
+                                                securityLevel: 'strict',
+                                                flowchart: { htmlLabels: false },
+                                            });
+
+                                            resolve(window.mermaid);
+                                        };
+                                        script.onerror = () => {
+                                            script.remove();
+
+                                            // The SRI-checked request can fail for reasons unrelated
+                                            // to the file itself (CDN edge hiccup, a proxy stripping
+                                            // CORS headers, etc). Retry once without integrity/CORS
+                                            // so a diagram viewer never breaks outright over a
+                                            // transient network condition.
+                                            if (withIntegrity) {
+                                                load(false);
+
+                                                return;
+                                            }
+
+                                            reject(new Error('Failed to load Mermaid'));
+                                        };
+                                        document.head.appendChild(script);
+                                    };
+
+                                    load(true);
+                                });
+
+                                window.__fiPpMermaidLoading.catch(() => {
+                                    window.__fiPpMermaidLoading = null;
+                                });
+
+                                return window.__fiPpMermaidLoading;
+                            },
                             async renderMermaid() {
-                                await window.fiPpEnsureMermaid?.()
-                                window.fiPpRenderMermaid?.(this.$el)
-                            }
+                                const nodes = [...this.$el.querySelectorAll('.fi-pp-mermaid.mermaid')];
+
+                                if (nodes.length === 0) {
+                                    return;
+                                }
+
+                                let mermaid;
+
+                                try {
+                                    mermaid = await this.ensureMermaid();
+                                } catch (error) {
+                                    console.warn('[filament-project-passport] Mermaid failed to load', error);
+
+                                    return;
+                                }
+
+                                // Render each diagram independently so one malformed
+                                // diagram does not leave every other diagram on the
+                                // page as raw text.
+                                for (const node of nodes) {
+                                    try {
+                                        await mermaid.run({ nodes: [node] });
+                                    } catch (error) {
+                                        console.warn('[filament-project-passport] Mermaid render failed', error);
+                                    }
+                                }
+                            },
                         }"
                         x-init="$nextTick(() => renderMermaid())"
                         x-on:click="
@@ -75,74 +186,3 @@
         </div>
     @endif
 </div>
-
-<script>
-    (() => {
-        if (window.fiPpEnsureMermaid) {
-            return;
-        }
-
-        // Pinned to an exact release (not a floating "@11" tag) so the
-        // Subresource Integrity hash always matches the fetched file — a
-        // floating tag would silently break SRI (and thus the diagram
-        // viewer) the moment a new mermaid patch version is published.
-        // Both values live in config('filament-project-passport.docs.mermaid').
-        const MERMAID_VERSION = {!! Illuminate\Support\Js::from(config('filament-project-passport.docs.mermaid.version')) !!};
-        const MERMAID_CDN = `https://cdn.jsdelivr.net/npm/mermaid@${MERMAID_VERSION}/dist/mermaid.min.js`;
-        const MERMAID_INTEGRITY = {!! Illuminate\Support\Js::from(config('filament-project-passport.docs.mermaid.integrity')) !!};
-
-        window.fiPpEnsureMermaid = function () {
-            if (window.mermaid) {
-                return Promise.resolve(window.mermaid);
-            }
-
-            if (window.__fiPpMermaidLoading) {
-                return window.__fiPpMermaidLoading;
-            }
-
-            window.__fiPpMermaidLoading = new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = MERMAID_CDN;
-                script.integrity = MERMAID_INTEGRITY;
-                script.crossOrigin = 'anonymous';
-                script.referrerPolicy = 'no-referrer';
-                script.async = true;
-                script.onload = () => {
-                    const dark = document.documentElement.classList.contains('dark');
-
-                    window.mermaid.initialize({
-                        startOnLoad: false,
-                        theme: dark ? 'dark' : 'default',
-                        securityLevel: 'strict',
-                        flowchart: { htmlLabels: false },
-                    });
-
-                    resolve(window.mermaid);
-                };
-                script.onerror = () => reject(new Error('Failed to load Mermaid'));
-                document.head.appendChild(script);
-            });
-
-            return window.__fiPpMermaidLoading;
-        };
-
-        window.fiPpRenderMermaid = async function (root) {
-            if (! root) {
-                return;
-            }
-
-            const nodes = [...root.querySelectorAll('.fi-pp-mermaid.mermaid')];
-
-            if (nodes.length === 0) {
-                return;
-            }
-
-            try {
-                const mermaid = await window.fiPpEnsureMermaid();
-                await mermaid.run({ nodes });
-            } catch (error) {
-                console.warn('[filament-project-passport] Mermaid render failed', error);
-            }
-        };
-    })();
-</script>
