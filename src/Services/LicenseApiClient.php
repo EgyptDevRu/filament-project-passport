@@ -95,8 +95,23 @@ final class LicenseApiClient
     }
 
     /**
-     * Nav / canAccess only — never blocks on the network.
-     * Cold cache ⇒ false (docs stay hidden until Status or a background warm fills the cache).
+     * True when cache has a successful unofficial result (hide Documentation nav).
+     * Cold cache / failed checks are NOT unofficial — nav stays visible.
+     */
+    public function isKnownUnofficialFromCache(): bool
+    {
+        $cached = $this->cachedPayload();
+
+        if ($cached === null || LicenseErrorCode::isUndefinedStatus($cached)) {
+            return false;
+        }
+
+        return ! $this->isOfficialPayload($cached);
+    }
+
+    /**
+     * Content gate — official from cache only. Never hits the network.
+     * Cold / failed cache ⇒ false (page can still be opened; body stays locked).
      */
     public function allowsDocumentationFromCache(): bool
     {
@@ -110,12 +125,19 @@ final class LicenseApiClient
     }
 
     /**
-     * Warm the license cache after the HTTP response (Filament sidebar must stay fast).
+     * Warm (or refresh-after-failure) the license cache without blocking the request.
+     * Safe to call from Filament::serving and page mounts.
      */
-    public function dispatchBackgroundFetch(): bool
+    public function dispatchBackgroundFetch(bool $force = false): bool
     {
-        if ($this->cachedPayload() !== null) {
-            return false;
+        $cached = $this->cachedPayload();
+
+        // Keep a warm successful cache; retry briefly-cached failures when forced
+        // or when nothing is cached yet.
+        if ($cached !== null && ! $force) {
+            if (! LicenseErrorCode::isUndefinedStatus($cached)) {
+                return false;
+            }
         }
 
         $lockKey = $this->cacheKey().'.fetching';
@@ -125,12 +147,20 @@ final class LicenseApiClient
         }
 
         if (app()->runningUnitTests()) {
+            Cache::forget($lockKey);
+
             return true;
         }
 
-        dispatch(function () use ($lockKey): void {
+        dispatch(function () use ($lockKey, $force): void {
             try {
-                app(self::class)->fetch();
+                $client = app(self::class);
+
+                if ($force) {
+                    $client->forgetCache();
+                }
+
+                $client->fetch();
             } finally {
                 Cache::forget($lockKey);
             }
@@ -175,6 +205,7 @@ final class LicenseApiClient
         try {
             $response = Http::connectTimeout(self::CONNECT_TIMEOUT_SECONDS)
                 ->timeout(self::REQUEST_TIMEOUT_SECONDS)
+                ->withOptions($this->httpClientOptions())
                 ->asJson()
                 ->withHeaders($this->requestHeaders($host))
                 ->post($endpoint, [
@@ -316,6 +347,38 @@ final class LicenseApiClient
         }
 
         return LicenseErrorCode::UNKNOWN;
+    }
+
+    /**
+     * Prefer HTTP/2 for the license API call (Cloudflare / modern HTTPS origins).
+     *
+     * Uses CURL_HTTP_VERSION_2TLS when available so HTTPS negotiates HTTP/2 and
+     * falls back to HTTP/1.1 only if the peer or local libcurl cannot speak h2.
+     * Guzzle's `version` is set to 2.0 to match.
+     *
+     * @return array<string, mixed>
+     */
+    private function httpClientOptions(): array
+    {
+        $options = [
+            'version' => '2.0',
+        ];
+
+        $curlVersion = null;
+
+        if (defined('CURL_HTTP_VERSION_2TLS')) {
+            $curlVersion = CURL_HTTP_VERSION_2TLS;
+        } elseif (defined('CURL_HTTP_VERSION_2_0')) {
+            $curlVersion = CURL_HTTP_VERSION_2_0;
+        }
+
+        if ($curlVersion !== null) {
+            $options['curl'] = [
+                CURLOPT_HTTP_VERSION => $curlVersion,
+            ];
+        }
+
+        return $options;
     }
 
     /**

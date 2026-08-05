@@ -12,14 +12,19 @@ use EgyptDevRu\FilamentProjectPassport\Services\ComposerDependencyAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerLicenseAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\DocumentationScanner;
 use EgyptDevRu\FilamentProjectPassport\Services\LicenseApiClient;
+use EgyptDevRu\FilamentProjectPassport\Support\EnvironmentWarning;
+use EgyptDevRu\FilamentProjectPassport\Support\PageAuthorizer;
 use Filament\Facades\Filament;
 use Filament\Panel;
 use Filament\PanelRegistry;
 use Filament\Support\Facades\FilamentView;
 use Filament\View\PanelsRenderHook;
+use Illuminate\Auth\Events\Login;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Event;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
+use Throwable;
 
 class FilamentProjectPassportServiceProvider extends PackageServiceProvider
 {
@@ -39,6 +44,7 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
             ->name('filament-project-passport')
             ->hasConfigFile()
             ->hasViews()
+            ->hasRoutes('web')
             ->hasCommands([
                 RefreshDependencyAuditCommand::class,
                 RefreshLicenseAuditCommand::class,
@@ -77,6 +83,7 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
     {
         $this->registerStyles();
         $this->registerEnvironmentBadge();
+        $this->registerEnvironmentWarning();
         $this->registerSchedule();
 
         if (! class_exists(Filament::class) || ! $this->app->bound('filament')) {
@@ -87,7 +94,46 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
             foreach (Filament::getPanels() as $panel) {
                 $this->ensurePagesRegistered($panel);
             }
+
+            // Warm license cache in the background on any Filament request so
+            // Documentation / Status do not depend on visiting Status first.
+            // Never call the API synchronously here (sidebar must stay fast).
+            try {
+                if (Filament::auth()->check() && PageAuthorizer::canAccess()) {
+                    app(LicenseApiClient::class)->dispatchBackgroundFetch();
+                }
+            } catch (Throwable) {
+                // Auth / panel may be unavailable outside an HTTP panel request.
+            }
         });
+    }
+
+    protected function registerEnvironmentWarning(): void
+    {
+        Event::listen(Login::class, function (): void {
+            EnvironmentWarning::markPendingAfterLogin();
+        });
+
+        if (! class_exists(FilamentView::class) || ! class_exists(PanelsRenderHook::class)) {
+            return;
+        }
+
+        $hook = null;
+
+        if (defined(PanelsRenderHook::class.'::BODY_END')) {
+            $hook = PanelsRenderHook::BODY_END;
+        } elseif (defined(PanelsRenderHook::class.'::SCRIPTS_AFTER')) {
+            $hook = PanelsRenderHook::SCRIPTS_AFTER;
+        }
+
+        if ($hook === null) {
+            return;
+        }
+
+        FilamentView::registerRenderHook(
+            $hook,
+            fn (): string => view('filament-project-passport::components.environment-warning-modal')->render(),
+        );
     }
 
     protected function registerSchedule(): void

@@ -7,6 +7,7 @@ use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\LoadsPassportDataLazily;
 use EgyptDevRu\FilamentProjectPassport\Services\DocumentationScanner;
 use EgyptDevRu\FilamentProjectPassport\Services\LicenseApiClient;
 use EgyptDevRu\FilamentProjectPassport\Support\DocumentationVisibility;
+use EgyptDevRu\FilamentProjectPassport\Support\LicenseErrorCode;
 use EgyptDevRu\FilamentProjectPassport\Support\PageAuthorizer;
 use Filament\Pages\Page;
 use Livewire\Attributes\Locked;
@@ -18,15 +19,18 @@ class DocumentationPage extends Page
 
     protected static ?string $slug = 'developer-support/documentation';
 
+    /**
+     * Menu visibility: hide only when the license is known unofficial.
+     * Cold / failed / undefined status keeps the item visible so users are not
+     * forced to open Status first. Markdown body stays gated separately.
+     */
     public static function canAccess(): bool
     {
         if (! PageAuthorizer::canAccess()) {
             return false;
         }
 
-        // Cache only — never call the license API while Filament builds navigation
-        // (runs on every admin page and was causing 20–50s "waiting for server").
-        return app(LicenseApiClient::class)->allowsDocumentationFromCache();
+        return ! app(LicenseApiClient::class)->isKnownUnofficialFromCache();
     }
 
     /**
@@ -37,6 +41,35 @@ class DocumentationPage extends Page
     {
         return DocumentationVisibility::contentAllowed();
     }
+
+    /**
+     * Official license from cache — never hits the network.
+     */
+    public function documentationLicenseAllowsContent(): bool
+    {
+        return app(LicenseApiClient::class)->allowsDocumentationFromCache();
+    }
+
+    /**
+     * Still waiting on a background license check (nav visible, body locked).
+     */
+    public function documentationLicensePending(): bool
+    {
+        $cached = app(LicenseApiClient::class)->cachedPayload();
+
+        return $cached === null || LicenseErrorCode::isUndefinedStatus($cached);
+    }
+
+    /**
+     * True while a background license check has not produced a definitive result.
+     * Used by Alpine to poll without calling PHP methods from the browser.
+     */
+    public bool $licensePending = true;
+
+    /**
+     * True when cached license is official and docs content may load.
+     */
+    public bool $licenseAllowsContent = false;
 
     /**
      * Public metadata only — never include absolute filesystem paths.
@@ -93,7 +126,7 @@ class DocumentationPage extends Page
      */
     public function getActiveDocumentHtmlProperty(): string
     {
-        if (! $this->documentationContentAllowed()) {
+        if (! $this->documentationContentAllowed() || ! $this->documentationLicenseAllowsContent()) {
             return '';
         }
 
@@ -110,7 +143,7 @@ class DocumentationPage extends Page
 
     public function selectDocument(string $key): void
     {
-        if (! $this->documentationContentAllowed()) {
+        if (! $this->documentationContentAllowed() || ! $this->documentationLicenseAllowsContent()) {
             return;
         }
 
@@ -124,7 +157,7 @@ class DocumentationPage extends Page
 
     public function toggleFolder(string $folderKey): void
     {
-        if (! $this->documentationContentAllowed()) {
+        if (! $this->documentationContentAllowed() || ! $this->documentationLicenseAllowsContent()) {
             return;
         }
 
@@ -140,9 +173,68 @@ class DocumentationPage extends Page
         $this->expandedFolders[] = $folderKey;
     }
 
+    /**
+     * Kick a background license warm (never blocks nav) then load docs if allowed.
+     */
+    public function loadPageData(): void
+    {
+        if ($this->ready) {
+            return;
+        }
+
+        app(LicenseApiClient::class)->dispatchBackgroundFetch();
+        $this->syncLicenseFlags();
+
+        if ($this->licenseAllowsContent && $this->documentationContentAllowed()) {
+            $this->hydratePassportData();
+        } else {
+            $this->documents = [];
+            $this->documentTree = [];
+            $this->activeDocumentKey = null;
+            $this->expandedFolders = [];
+        }
+
+        $this->ready = true;
+    }
+
+    /**
+     * Poll while license is pending so docs appear once the background warm finishes.
+     */
+    public function pollLicenseStatus(): void
+    {
+        $client = app(LicenseApiClient::class);
+
+        if ($client->cachedPayload() === null) {
+            $client->dispatchBackgroundFetch();
+        }
+
+        $this->syncLicenseFlags();
+
+        if ($client->isKnownUnofficialFromCache()) {
+            $this->documents = [];
+            $this->documentTree = [];
+            $this->activeDocumentKey = null;
+
+            return;
+        }
+
+        if ($this->licenseAllowsContent && $this->documentationContentAllowed() && $this->documents === []) {
+            $this->hydratePassportData();
+        }
+    }
+
+    private function syncLicenseFlags(): void
+    {
+        $client = app(LicenseApiClient::class);
+        $cached = $client->cachedPayload();
+
+        $this->licensePending = $cached === null || LicenseErrorCode::isUndefinedStatus($cached);
+        $this->licenseAllowsContent = $client->allowsDocumentationFromCache();
+    }
+
     protected function hydratePassportData(): void
     {
-        if (! $this->documentationContentAllowed()) {
+        if (! $this->documentationContentAllowed() || ! $this->documentationLicenseAllowsContent()) {
             $this->documents = [];
             $this->documentTree = [];
             $this->activeDocumentKey = null;

@@ -6,7 +6,9 @@
             buffer: '',
             timer: null,
             async runRefresh() {
-                await $wire.refreshLicenseAudit()
+                try {
+                    await $wire.refreshLicenseAudit()
+                } catch (_) {}
             },
             onKey(event) {
                 const tag = (event.target && event.target.tagName) ? event.target.tagName.toUpperCase() : ''

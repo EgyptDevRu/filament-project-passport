@@ -18,7 +18,9 @@
                 }
             },
             async runRefresh() {
-                await $wire.refreshLicenseCheck()
+                try {
+                    await $wire.refreshLicenseCheck()
+                } catch (_) {}
             },
             onKey(event) {
                 if (this.open) {

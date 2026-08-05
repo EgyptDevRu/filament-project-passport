@@ -331,6 +331,7 @@ it('hides documentation when the license is unofficial', function () {
     ]);
 
     expect(app(LicenseApiClient::class)->isOfficial())->toBeFalse()
+        ->and(app(LicenseApiClient::class)->isKnownUnofficialFromCache())->toBeTrue()
         ->and(DocumentationPage::canAccess())->toBeFalse()
         ->and(DocumentationPage::getNavigationItems())->toBe([]);
 });
@@ -355,11 +356,36 @@ it('does not call the license API while resolving documentation navigation', fun
         ], 200),
     ]);
 
-    // Cold cache: nav must stay instant (no HTTP). Docs stay hidden until cache is warm.
-    expect(DocumentationPage::canAccess())->toBeFalse()
-        ->and(DocumentationPage::getNavigationItems())->toBe([]);
+    // Cold cache: nav stays visible (not known unofficial) and must not hit the network.
+    expect(app(LicenseApiClient::class)->isKnownUnofficialFromCache())->toBeFalse()
+        ->and(DocumentationPage::canAccess())->toBeTrue()
+        ->and(app(LicenseApiClient::class)->allowsDocumentationFromCache())->toBeFalse();
 
     Http::assertNothingSent();
+});
+
+it('keeps documentation navigation visible while license status is undefined', function () {
+    config()->set('filament-project-passport.authorization', [
+        'restricted_to_admins' => false,
+        'allowed_emails' => [],
+        'gate_name' => null,
+        'permission' => null,
+    ]);
+    config()->set('app.url', 'https://app.test');
+
+    $user = makeAuthUser('user@example.com');
+    auth()->login($user);
+
+    Http::fake([
+        'en.egyptdev.ru/*' => Http::response('upstream failure', 503),
+    ]);
+
+    $result = app(LicenseApiClient::class)->fetch();
+
+    expect($result['request_failed'] ?? false)->toBeTrue()
+        ->and(app(LicenseApiClient::class)->isKnownUnofficialFromCache())->toBeFalse()
+        ->and(DocumentationPage::canAccess())->toBeTrue()
+        ->and(app(LicenseApiClient::class)->allowsDocumentationFromCache())->toBeFalse();
 });
 
 it('shows documentation navigation from cache without a second API call', function () {

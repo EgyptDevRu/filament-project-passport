@@ -2,13 +2,11 @@
     <div
         class="fi-pp"
         wire:init="loadPageData"
-        @if ($this->scanning)
-            wire:poll.3s="pollPageData"
-        @endif
         x-data="{
             buffer: '',
             timer: null,
             scanTimer: null,
+            pollTimer: null,
             scanTimeoutMs: 3 * 60 * 1000,
             armScanTimeout(scanning) {
                 clearTimeout(this.scanTimer)
@@ -18,14 +16,51 @@
                     return
                 }
 
-                this.scanTimer = setTimeout(() => {
-                    $wire.failScanTimeout()
+                this.scanTimer = setTimeout(async () => {
+                    try {
+                        await $wire.failScanTimeout()
+                    } catch (_) {}
                 }, this.scanTimeoutMs)
+            },
+            startPoll() {
+                this.stopPoll()
+                this.pollTimer = setInterval(async () => {
+                    if (document.visibilityState !== 'visible') {
+                        return
+                    }
+
+                    if (! $wire.scanning) {
+                        this.stopPoll()
+
+                        return
+                    }
+
+                    try {
+                        await $wire.pollPageData()
+                    } catch (_) {
+                        // After tab inactivity Livewire may abort; never leave an uncaught rejection.
+                    }
+                }, 3000)
+            },
+            stopPoll() {
+                clearInterval(this.pollTimer)
+                this.pollTimer = null
             },
             async runRefresh() {
                 this.armScanTimeout(true)
-                await $wire.refreshDependencyAudit()
+                this.startPoll()
+
+                try {
+                    await $wire.refreshDependencyAudit()
+                } catch (_) {}
+
                 this.armScanTimeout(Boolean($wire.scanning))
+
+                if ($wire.scanning) {
+                    this.startPoll()
+                } else {
+                    this.stopPoll()
+                }
             },
             onKey(event) {
                 const tag = (event.target && event.target.tagName) ? event.target.tagName.toUpperCase() : ''
@@ -53,9 +88,18 @@
         }"
         x-init="
             armScanTimeout(Boolean($wire.scanning));
-            $wire.$watch('scanning', value => armScanTimeout(Boolean(value)));
+            if ($wire.scanning) startPoll();
+            $wire.$watch('scanning', value => {
+                armScanTimeout(Boolean(value));
+                Boolean(value) ? startPoll() : stopPoll();
+            });
         "
         x-on:keydown.window="onKey($event)"
+        x-on:visibilitychange.window="
+            if (document.visibilityState === 'visible' && $wire.scanning) {
+                startPoll()
+            }
+        "
     >
         {{-- Always render the page shell immediately (empty or cached). Never block first paint on Composer. --}}
         @if ($this->scanning && empty($this->audit['error']))
