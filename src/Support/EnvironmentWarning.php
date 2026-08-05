@@ -2,6 +2,8 @@
 
 namespace EgyptDevRu\FilamentProjectPassport\Support;
 
+use Symfony\Component\HttpFoundation\Exception\SuspiciousOperationException;
+
 /**
  * One-time after-login warning for non-production Filament sessions.
  */
@@ -51,7 +53,7 @@ final class EnvironmentWarning
     {
         try {
             $host = (string) request()->getHost();
-        } catch (\Symfony\Component\HttpFoundation\Exception\SuspiciousOperationException) {
+        } catch (SuspiciousOperationException) {
             return '';
         }
 

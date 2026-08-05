@@ -2,6 +2,7 @@
 
 use EgyptDevRu\FilamentProjectPassport\Support\EnvironmentWarning;
 use Illuminate\Auth\Events\Login;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 
 it('does not warn in production or testing environments', function () {
@@ -47,11 +48,11 @@ it('sanitizes environment labels and installation hosts for display', function (
             ->and(EnvironmentWarning::environmentLabel())->not->toContain('<')
             ->and(EnvironmentWarning::environmentLabel())->not->toContain('>');
 
-        $request = Illuminate\Http\Request::create('https://panel.example.test/admin', 'GET');
+        $request = Request::create('https://panel.example.test/admin', 'GET');
         app()->instance('request', $request);
         expect(EnvironmentWarning::installationDomain())->toBe('PANEL.EXAMPLE.TEST');
 
-        $poisoned = Illuminate\Http\Request::create('https://example.test/', 'GET');
+        $poisoned = Request::create('https://example.test/', 'GET');
         $poisoned->headers->set('HOST', 'evil.test<script>');
         app()->instance('request', $poisoned);
 
