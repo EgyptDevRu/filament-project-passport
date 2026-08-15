@@ -62,11 +62,12 @@ return [
     |
     | Evaluation order:
     | 1. If `gate_name` is set and the gate is defined, that gate decides access.
-    | 2. If `allowed_emails` is a non-empty array, only those emails may access.
-    | 3. If `restricted_to_admins` is true, only admin / super-admin style users
+    | 2. Spatie / Shield permission (see `permission` below).
+    | 3. If `allowed_emails` is a non-empty array, only those emails may access.
+    | 4. If `restricted_to_admins` is true, only admin / super-admin style users
     |    — enforced in production; see `restrict_non_production` below for
     |    local/staging environments.
-    | 4. Otherwise, any authenticated Filament user may access the pages.
+    | 5. Otherwise, any authenticated Filament user may access the pages.
     |
     */
 
@@ -114,11 +115,26 @@ return [
         'gate_name' => null,
 
         /*
-         * Optional Spatie Permission name. Checked when the user has a
-         * `can()` / `hasPermissionTo()` method (e.g. Spatie laravel-permission,
-         * including bezhansalleh/filament-shield, which is built on top of it).
+         * Optional Spatie / Shield permission name.
+         *
+         * Null (default): when bezhansalleh/filament-shield is installed, this
+         * package registers one custom permission (`View:DeveloperSupport`,
+         * label below) and excludes the four Developer Support pages from
+         * Shield page discovery. That key is enforced only after it exists in
+         * Spatie's permission store (after `shield:generate`). Until then —
+         * and on installs without Shield — evaluation falls through to
+         * allowed_emails / restricted_to_admins.
+         *
+         * Set a non-empty string to always check that permission via
+         * `can()` / `hasPermissionTo()` (and to register that key with Shield
+         * instead of the default).
          */
         'permission' => null,
+
+        /*
+         * Label shown in Shield's Role Resource Custom Permissions tab.
+         */
+        'permission_label' => '[Package] Developer Support',
 
         /*
          * Extra role names accepted by the built-in "admin-like" heuristic

@@ -25,28 +25,10 @@ final class PageAuthorizer
             return Gate::forUser($user)->allows($gateName);
         }
 
-        $permission = $config['permission'] ?? null;
+        $permissionResult = self::evaluatePermission($user);
 
-        if (is_string($permission) && $permission !== '') {
-            $hasCan = method_exists($user, 'can');
-            $hasPermissionTo = method_exists($user, 'hasPermissionTo');
-
-            if ($hasCan && $user->can($permission)) {
-                return true;
-            }
-
-            if ($hasPermissionTo) {
-                try {
-                    return (bool) $user->hasPermissionTo($permission);
-                } catch (Throwable) {
-                    return false;
-                }
-            }
-
-            // Permission configured but can() denied (or only can() exists).
-            if ($hasCan) {
-                return false;
-            }
+        if ($permissionResult !== null) {
+            return $permissionResult;
         }
 
         /** @var list<string> $allowedEmails */
@@ -74,6 +56,65 @@ final class PageAuthorizer
         }
 
         return true;
+    }
+
+    /**
+     * @return bool|null True/false when a permission decides; null to fall through.
+     */
+    private static function evaluatePermission(Authenticatable $user): ?bool
+    {
+        $permission = ShieldIntegration::permissionKey();
+
+        if ($permission === null) {
+            return null;
+        }
+
+        $explicit = ShieldIntegration::permissionIsExplicit();
+
+        if (! $explicit && ! ShieldIntegration::permissionExistsInStore($permission)) {
+            return null;
+        }
+
+        return self::userHasPermission($user, $permission);
+    }
+
+    /**
+     * @return bool|null Null when the user has no permission API to consult.
+     */
+    private static function userHasPermission(Authenticatable $user, string $permission): ?bool
+    {
+        $hasCan = method_exists($user, 'can');
+        $hasPermissionTo = method_exists($user, 'hasPermissionTo');
+
+        if ($hasCan && $user->can($permission)) {
+            return true;
+        }
+
+        if ($hasPermissionTo) {
+            try {
+                return (bool) $user->hasPermissionTo($permission);
+            } catch (Throwable $exception) {
+                if (self::isMissingPermissionException($exception)) {
+                    return ShieldIntegration::permissionIsExplicit() ? false : null;
+                }
+
+                return false;
+            }
+        }
+
+        if ($hasCan) {
+            return false;
+        }
+
+        return null;
+    }
+
+    private static function isMissingPermissionException(Throwable $exception): bool
+    {
+        $missing = 'Spatie\\Permission\\Exceptions\\PermissionDoesNotExist';
+
+        return (class_exists($missing) && $exception instanceof $missing)
+            || str_contains($exception::class, 'PermissionDoesNotExist');
     }
 
     /**

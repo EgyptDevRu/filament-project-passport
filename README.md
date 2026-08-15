@@ -72,10 +72,15 @@ If you run `php artisan config:cache`, re-run it after changing any of these `.e
 ### Authorization evaluation order
 
 1. If `gate_name` is set and defined, that Gate decides access
-2. If `permission` is set, Spatie / `can()` is checked
+2. Spatie / Shield permission:
+   - If `permission` is set, that key is checked via `can()` / `hasPermissionTo()`
+   - If `permission` is `null` and **Filament Shield** is installed, one custom permission `View:DeveloperSupport` (label `[Package] Developer Support`) is registered and checked **only after** it exists in Spatie's store (typically after `php artisan shield:generate`). The four Developer Support pages are excluded from Shield page discovery so they do not invent unused `View:StatusPage`-style keys.
+   - If Shield is not installed, or the permission has not been generated yet, this step is skipped
 3. If `allowed_emails` is non-empty, only those emails may access
 4. If `restricted_to_admins` is `true`, only admin-like users (flags / roles) may access
 5. Otherwise, any authenticated Filament user may access
+
+Override the Shield key or UI label in the published config (`authorization.permission` / `authorization.permission_label`). After changing them, re-run `php artisan shield:generate` so the Role Resource stays in sync.
 
 ## Local documentation
 

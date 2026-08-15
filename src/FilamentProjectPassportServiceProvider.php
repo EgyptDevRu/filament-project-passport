@@ -14,6 +14,7 @@ use EgyptDevRu\FilamentProjectPassport\Services\DocumentationScanner;
 use EgyptDevRu\FilamentProjectPassport\Services\LicenseApiClient;
 use EgyptDevRu\FilamentProjectPassport\Support\EnvironmentWarning;
 use EgyptDevRu\FilamentProjectPassport\Support\PageAuthorizer;
+use EgyptDevRu\FilamentProjectPassport\Support\ShieldIntegration;
 use Filament\Facades\Filament;
 use Filament\Panel;
 use Filament\PanelRegistry;
@@ -81,6 +82,9 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
 
     public function packageBooted(): void
     {
+        ShieldIntegration::register();
+        $this->app->booted(static fn () => ShieldIntegration::register());
+
         $this->registerStyles();
         $this->registerEnvironmentBadge();
         $this->registerEnvironmentWarning();
