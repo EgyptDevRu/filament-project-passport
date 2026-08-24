@@ -9,6 +9,7 @@ composer.phar
 # Logs
 npm-debug.log
 yarn-error.log
+api/*
 
 # Caches
 .phpunit.cache

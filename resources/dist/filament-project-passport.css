@@ -4,6 +4,12 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    direction: ltr;
+}
+
+#fi-main-content:has(.fi-pp),
+main.fi-main:has(.fi-pp) {
+    direction: ltr;
 }
 
 /* ---------- Undefined status ---------- */

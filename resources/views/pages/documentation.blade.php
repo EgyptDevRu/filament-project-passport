@@ -1,6 +1,7 @@
 <x-filament-panels::page>
     <div
         class="fi-pp"
+        dir="ltr"
         wire:init="loadPageData"
         x-data="{
             pollTimer: null,

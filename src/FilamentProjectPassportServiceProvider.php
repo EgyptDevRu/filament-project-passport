@@ -88,6 +88,7 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
         $this->registerStyles();
         $this->registerEnvironmentBadge();
         $this->registerEnvironmentWarning();
+        $this->registerLtrMainContent();
         $this->registerSchedule();
 
         if (! class_exists(Filament::class) || ! $this->app->bound('filament')) {
@@ -137,6 +138,34 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
         FilamentView::registerRenderHook(
             $hook,
             fn (): string => view('filament-project-passport::components.environment-warning-modal')->render(),
+        );
+    }
+
+    /**
+     * Passport UI is English-only for now. When the panel is RTL (e.g. Arabic),
+     * keep Developer Support pages LTR by setting dir on Filament's main content.
+     */
+    protected function registerLtrMainContent(): void
+    {
+        if (! class_exists(FilamentView::class) || ! class_exists(PanelsRenderHook::class)) {
+            return;
+        }
+
+        $hook = null;
+
+        if (defined(PanelsRenderHook::class.'::BODY_END')) {
+            $hook = PanelsRenderHook::BODY_END;
+        } elseif (defined(PanelsRenderHook::class.'::SCRIPTS_AFTER')) {
+            $hook = PanelsRenderHook::SCRIPTS_AFTER;
+        }
+
+        if ($hook === null) {
+            return;
+        }
+
+        FilamentView::registerRenderHook(
+            $hook,
+            fn (): string => view('filament-project-passport::components.ltr-main')->render(),
         );
     }
 
