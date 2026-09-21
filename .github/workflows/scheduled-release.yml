@@ -2,9 +2,13 @@ name: Scheduled Release
 
 # Creates a patch release twice per week (Monday and Friday, near end of UTC day).
 #
-# Scheduled runs — only create when NONE exists in the window:
-#   Monday slot  → create only if no release Sat–Mon
-#   Friday slot  → create only if no release Tue–Fri
+# Scheduled runs — only create when NONE exists in that slot's window.
+# Windows must not overlap: Friday's 23:00 cron often slips to Saturday
+# 00:xx UTC, so a Sat published_at is still the Friday slot — Monday must
+# not treat it as "already released this window".
+#
+#   Monday slot  → Sun–Tue (Mon cron + Tue-morning delay; excludes Sat)
+#   Friday slot  → Wed–Sat (Fri cron + Sat-morning delay; excludes Mon)
 #
 # Manual "Run workflow" — always creates a new patch release (forced).
 #
@@ -34,6 +38,7 @@ jobs:
     outputs:
       should_release: ${{ steps.gate.outputs.should_release }}
       slot: ${{ steps.gate.outputs.slot }}
+      slot_day: ${{ steps.gate.outputs.today }}
       window_start: ${{ steps.gate.outputs.window_start }}
       window_end: ${{ steps.gate.outputs.window_end }}
 
@@ -80,62 +85,80 @@ jobs:
           DOW="$(date -u -d "${SLOT_DAY}" +%u)"
           DOW=$((10#${DOW}))
 
-          # Map the slot to a release window.
-          # Monday → Sat–Mon
-          # Friday → Tue–Fri
-          # Weekend fallout / mid-week → nearest matching window
+          # Map the slot to a non-overlapping release window (see header comment).
+          # Weekend fallout / mid-week → nearest matching window.
           if [ "${DOW}" -eq 1 ]; then
-            WINDOW_START="$(date -u -d "${SLOT_DAY} - 2 days" +%Y-%m-%d)"
-            WINDOW_END="${SLOT_DAY}"
+            WINDOW_START="$(date -u -d "${SLOT_DAY} - 1 day" +%Y-%m-%d)"
+            WINDOW_END="$(date -u -d "${SLOT_DAY} + 1 day" +%Y-%m-%d)"
             SLOT_NAME="monday"
           elif [ "${DOW}" -eq 5 ]; then
-            WINDOW_START="$(date -u -d "${SLOT_DAY} - 3 days" +%Y-%m-%d)"
-            WINDOW_END="${SLOT_DAY}"
+            WINDOW_START="$(date -u -d "${SLOT_DAY} - 2 days" +%Y-%m-%d)"
+            WINDOW_END="$(date -u -d "${SLOT_DAY} + 1 day" +%Y-%m-%d)"
             SLOT_NAME="friday"
           elif [ "${DOW}" -eq 6 ] || [ "${DOW}" -eq 7 ]; then
-            # Late Friday run that landed on the weekend afternoon: still Friday window.
+            # Late Friday run that landed on the weekend: still Friday window.
             while [ "$(date -u -d "${SLOT_DAY}" +%u)" != "5" ]; do
               SLOT_DAY="$(date -u -d "${SLOT_DAY} - 1 day" +%Y-%m-%d)"
             done
-            WINDOW_START="$(date -u -d "${SLOT_DAY} - 3 days" +%Y-%m-%d)"
-            WINDOW_END="${SLOT_DAY}"
+            WINDOW_START="$(date -u -d "${SLOT_DAY} - 2 days" +%Y-%m-%d)"
+            WINDOW_END="$(date -u -d "${SLOT_DAY} + 1 day" +%Y-%m-%d)"
             SLOT_NAME="friday"
           else
-            # Tue–Thu odd delay: Friday window ending this week's Friday.
+            # Tue–Thu odd delay: treat as Friday window for this week.
             DAYS_TO_FRI=$((5 - DOW))
-            WINDOW_END="$(date -u -d "${SLOT_DAY} + ${DAYS_TO_FRI} days" +%Y-%m-%d)"
-            WINDOW_START="$(date -u -d "${WINDOW_END} - 3 days" +%Y-%m-%d)"
+            FRI_DAY="$(date -u -d "${SLOT_DAY} + ${DAYS_TO_FRI} days" +%Y-%m-%d)"
+            WINDOW_START="$(date -u -d "${FRI_DAY} - 2 days" +%Y-%m-%d)"
+            WINDOW_END="$(date -u -d "${FRI_DAY} + 1 day" +%Y-%m-%d)"
             SLOT_NAME="friday"
           fi
 
-          echo "today=${WINDOW_END}" >> "${GITHUB_OUTPUT}"
+          echo "today=${SLOT_DAY}" >> "${GITHUB_OUTPUT}"
           echo "slot=${SLOT_NAME}" >> "${GITHUB_OUTPUT}"
           echo "window_start=${WINDOW_START}" >> "${GITHUB_OUTPUT}"
           echo "window_end=${WINDOW_END}" >> "${GITHUB_OUTPUT}"
           echo "Slot=${SLOT_NAME}; window ${WINDOW_START} → ${WINDOW_END} (UTC)"
 
           HAS_IN_WINDOW=0
-          while IFS= read -r published; do
+          # Prefer matching this slot's note marker (survives published_at drift).
+          # Fall back to published_at inside the non-overlapping calendar window.
+          while IFS=$'\t' read -r published body; do
             [ -z "${published}" ] && continue
             local_day="$(TZ=UTC date -d "${published}" +%Y-%m-%d 2>/dev/null || true)"
             [ -z "${local_day}" ] && continue
 
-            if [[ "${local_day}" < "${WINDOW_START}" || "${local_day}" > "${WINDOW_END}" ]]; then
-              continue
+            note_match=0
+            if printf '%s' "${body}" | grep -qi "Automated ${SLOT_NAME} release"; then
+              # Same ISO week as the slot day → this slot already shipped.
+              pub_week="$(TZ=UTC date -d "${published}" +%G-W%V 2>/dev/null || true)"
+              slot_week="$(TZ=UTC date -d "${SLOT_DAY}" +%G-W%V 2>/dev/null || true)"
+              if [ -n "${pub_week}" ] && [ "${pub_week}" = "${slot_week}" ]; then
+                note_match=1
+              fi
             fi
 
-            HAS_IN_WINDOW=1
-            echo "Found release on ${local_day} (published ${published}) inside window."
-            break
-          done < <(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=50" --jq '.[].published_at' 2>/dev/null || true)
+            in_calendar=0
+            if [[ ! "${local_day}" < "${WINDOW_START}" && ! "${local_day}" > "${WINDOW_END}" ]]; then
+              in_calendar=1
+            fi
+
+            if [ "${note_match}" -eq 1 ] || [ "${in_calendar}" -eq 1 ]; then
+              HAS_IN_WINDOW=1
+              if [ "${note_match}" -eq 1 ]; then
+                echo "Found ${SLOT_NAME} release on ${local_day} (published ${published}) via release notes."
+              else
+                echo "Found release on ${local_day} (published ${published}) inside window."
+              fi
+              break
+            fi
+          done < <(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=50" --jq '.[] | [.published_at, (.body // "")] | @tsv' 2>/dev/null || true)
 
           if [ "${HAS_IN_WINDOW}" -eq 1 ]; then
-            echo "A release already exists in ${WINDOW_START}→${WINDOW_END}. Skipping."
+            echo "A ${SLOT_NAME} release already exists for ${WINDOW_START}→${WINDOW_END}. Skipping."
             echo "should_release=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
-          echo "No release in window — will create one."
+          echo "No ${SLOT_NAME} release in window — will create one."
           echo "should_release=true" >> "${GITHUB_OUTPUT}"
 
   test:
@@ -235,10 +258,11 @@ jobs:
 
           NEXT="${{ steps.version.outputs.next }}"
           SLOT="${{ needs.gate.outputs.slot }}"
+          SLOT_DAY="${{ needs.gate.outputs.slot_day }}"
           WINDOW_START="${{ needs.gate.outputs.window_start }}"
           WINDOW_END="${{ needs.gate.outputs.window_end }}"
 
-          NOTES="Automated ${SLOT} release (${WINDOW_END} UTC). Window ${WINDOW_START} → ${WINDOW_END}."
+          NOTES="Automated ${SLOT} release (${SLOT_DAY} UTC). Window ${WINDOW_START} → ${WINDOW_END}."
 
           gh release create "${NEXT}" \
             --target "${{ github.event.repository.default_branch || 'main' }}" \
