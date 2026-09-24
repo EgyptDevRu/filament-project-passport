@@ -15,12 +15,15 @@ it('reads open source license texts from installed packages', function () {
 
     $withText = collect($packages)->first(
         fn (array $package): bool => (bool) ($package['has_license_text'] ?? false)
+            && is_string($package['license_text'] ?? null)
+            && $package['license_text'] !== ''
     );
 
-    expect($withText)->not->toBeNull()
-        ->and($withText['license_text'])->not->toBe('')
+    // CI / Testbench must still resolve Composer install paths to real LICENSE files.
+    expect($withText)->not->toBeNull('Expected at least one vendor package LICENSE file to be readable')
         ->and($withText['license_text'])->not->toContain("\0")
-        ->and($withText['name'])->toContain('/');
+        ->and($withText['name'])->toContain('/')
+        ->and($withText['license_file'])->not->toBeNull();
 });
 
 it('caches open source license results for fourteen days', function () {

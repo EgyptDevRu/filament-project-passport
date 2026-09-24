@@ -149,7 +149,6 @@ final class ComposerOpenSourceLicensesAuditor
     {
         $rows = [];
         $rootName = $this->rootPackageName();
-        $vendorRoot = $this->vendorRoot();
 
         foreach ($this->installedPackageRecords() as $record) {
             $name = $record['name'];
@@ -163,9 +162,9 @@ final class ComposerOpenSourceLicensesAuditor
             }
 
             $licenses = $record['licenses'];
-            $licenseFile = $this->findLicenseFile($record['install_path'], $vendorRoot);
+            $licenseFile = $this->findLicenseFile($record['install_path']);
             $licenseText = $licenseFile !== null
-                ? $this->readLicenseText($licenseFile, $vendorRoot)
+                ? $this->readLicenseText($licenseFile, $record['install_path'])
                 : '';
 
             $rows[] = [
@@ -192,13 +191,49 @@ final class ComposerOpenSourceLicensesAuditor
      */
     private function installedPackageRecords(): array
     {
-        $fromJson = $this->recordsFromInstalledJson();
+        // Prefer InstalledVersions paths: under Orchestra Testbench, base_path()
+        // vendor often differs from the Composer vendor that loaded the tests.
+        $fromVersions = $this->recordsFromInstalledVersionsFallback();
 
-        if ($fromJson !== []) {
-            return $fromJson;
+        if ($fromVersions !== []) {
+            $licensesByName = [];
+
+            foreach ($this->recordsFromInstalledJson() as $record) {
+                if ($record['licenses'] !== []) {
+                    $licensesByName[$record['name']] = $record['licenses'];
+                }
+            }
+
+            foreach ($fromVersions as $index => $record) {
+                if ($record['licenses'] === [] && isset($licensesByName[$record['name']])) {
+                    $fromVersions[$index]['licenses'] = $licensesByName[$record['name']];
+                }
+            }
+
+            return $fromVersions;
         }
 
-        return $this->recordsFromInstalledVersionsFallback();
+        return $this->enrichInstallPaths($this->recordsFromInstalledJson());
+    }
+
+    /**
+     * Fill missing install paths via InstalledVersions (Testbench base_path vendor
+     * often differs from the Composer vendor that actually holds the packages).
+     *
+     * @param  list<array{name: string, version: string, licenses: list<string>, install_path: string|null}>  $records
+     * @return list<array{name: string, version: string, licenses: list<string>, install_path: string|null}>
+     */
+    private function enrichInstallPaths(array $records): array
+    {
+        foreach ($records as $index => $record) {
+            if (is_string($record['install_path']) && $record['install_path'] !== '') {
+                continue;
+            }
+
+            $records[$index]['install_path'] = $this->installPathFromInstalledVersions($record['name']);
+        }
+
+        return $records;
     }
 
     /**
@@ -294,17 +329,7 @@ final class ComposerOpenSourceLicensesAuditor
                     // keep placeholder
                 }
 
-                $installPath = null;
-
-                try {
-                    $path = InstalledVersions::getInstallPath($name);
-                    if (is_string($path) && $path !== '') {
-                        $resolved = realpath($path);
-                        $installPath = $resolved !== false ? $resolved : null;
-                    }
-                } catch (Throwable) {
-                    $installPath = null;
-                }
+                $installPath = $this->installPathFromInstalledVersions($name);
 
                 $licenses = [];
 
@@ -326,6 +351,27 @@ final class ComposerOpenSourceLicensesAuditor
         return $records;
     }
 
+    private function installPathFromInstalledVersions(string $name): ?string
+    {
+        if (! class_exists(InstalledVersions::class)) {
+            return null;
+        }
+
+        try {
+            $path = InstalledVersions::getInstallPath($name);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (! is_string($path) || $path === '') {
+            return null;
+        }
+
+        $resolved = realpath($path);
+
+        return $resolved !== false ? $resolved : null;
+    }
+
     /**
      * @param  array<string, mixed>  $package
      */
@@ -333,27 +379,37 @@ final class ComposerOpenSourceLicensesAuditor
     {
         $installPath = $package['install-path'] ?? null;
 
-        if (! is_string($installPath) || $installPath === '') {
-            return null;
+        if (is_string($installPath) && $installPath !== '') {
+            $resolved = realpath($composerDir.DIRECTORY_SEPARATOR.$installPath);
+
+            if ($resolved !== false) {
+                return $resolved;
+            }
         }
 
-        $resolved = realpath($composerDir.DIRECTORY_SEPARATOR.$installPath);
+        $name = isset($package['name']) ? (string) $package['name'] : '';
 
-        return $resolved !== false ? $resolved : null;
+        return $name !== '' ? $this->installPathFromInstalledVersions($name) : null;
     }
 
-    private function findLicenseFile(?string $installPath, string $vendorRoot): ?string
+    /**
+     * LICENSE files must stay inside the Composer package install directory
+     * (not merely base_path('vendor'), which can differ under Testbench).
+     */
+    private function findLicenseFile(?string $installPath): ?string
     {
         if ($installPath === null || $installPath === '') {
             return null;
         }
 
-        if (! $this->pathIsInside($installPath, $vendorRoot)) {
+        $packageRoot = realpath($installPath);
+
+        if ($packageRoot === false || ! is_dir($packageRoot)) {
             return null;
         }
 
         foreach (self::LICENSE_FILENAMES as $filename) {
-            $candidate = $installPath.DIRECTORY_SEPARATOR.$filename;
+            $candidate = $packageRoot.DIRECTORY_SEPARATOR.$filename;
 
             if (! is_file($candidate)) {
                 continue;
@@ -361,7 +417,7 @@ final class ComposerOpenSourceLicensesAuditor
 
             $resolved = realpath($candidate);
 
-            if ($resolved === false || ! $this->pathIsInside($resolved, $vendorRoot)) {
+            if ($resolved === false || ! $this->pathIsInside($resolved, $packageRoot)) {
                 continue;
             }
 
@@ -371,9 +427,15 @@ final class ComposerOpenSourceLicensesAuditor
         return null;
     }
 
-    private function readLicenseText(string $path, string $vendorRoot): string
+    private function readLicenseText(string $path, ?string $installPath): string
     {
-        if (! $this->pathIsInside($path, $vendorRoot) || ! is_file($path) || ! is_readable($path)) {
+        if ($installPath === null || $installPath === '') {
+            return '';
+        }
+
+        $packageRoot = realpath($installPath);
+
+        if ($packageRoot === false || ! $this->pathIsInside($path, $packageRoot) || ! is_file($path) || ! is_readable($path)) {
             return '';
         }
 
@@ -409,13 +471,6 @@ final class ComposerOpenSourceLicensesAuditor
         $root = rtrim(str_replace('\\', '/', $root), '/').'/';
 
         return str_starts_with($path, $root) || $path === rtrim($root, '/');
-    }
-
-    private function vendorRoot(): string
-    {
-        $resolved = realpath(base_path('vendor'));
-
-        return $resolved !== false ? $resolved : base_path('vendor');
     }
 
     /**
