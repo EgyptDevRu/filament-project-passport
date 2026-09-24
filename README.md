@@ -15,6 +15,7 @@ Support status, documentation, and other studio-backed features only work when t
 - Configurable navigation label/icon/sort/group and authorization rules
 - License Audit for Composer package commercial-license compatibility
 - Dependency Audit for outdated packages, security advisories, Laravel & Filament
+- Open Source Licenses page (linked from Support Status) with full LICENSE texts per package
 
 ## Requirements
 
@@ -111,14 +112,21 @@ php artisan filament-project-passport:refresh-license-audit
 
 # Force license audit refresh
 php artisan filament-project-passport:refresh-license-audit --force
+
+# Refresh open source license texts (skips when cache is younger than 14 days)
+php artisan filament-project-passport:refresh-open-source-licenses
+
+# Force open source licenses refresh
+php artisan filament-project-passport:refresh-open-source-licenses --force
 ```
 
 The package also schedules them automatically (app timezone):
 
-| Job                                                  | When                                                                                                    |
-|------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
-| `filament-project-passport:refresh-dependency-audit` | Every day at `03:00` (Sunday always refreshes; other days only if the cache is missing or ≥ 7 days old) |
-| `filament-project-passport:refresh-license-audit`    | Every day at `03:00` (runs a refresh only if the cache is missing or ≥ 14 days old)                     |
+| Job                                                       | When                                                                                                    |
+|-----------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| `filament-project-passport:refresh-dependency-audit`      | Every day at `03:00` (Sunday always refreshes; other days only if the cache is missing or ≥ 7 days old) |
+| `filament-project-passport:refresh-license-audit`         | Every day at `03:00` (runs a refresh only if the cache is missing or ≥ 14 days old)                     |
+| `filament-project-passport:refresh-open-source-licenses`  | Every day at `03:00` (runs a refresh only if the cache is missing or ≥ 14 days old)                     |
 
 Dependency Audit invokes Composer via project `composer.phar` (if present) or the global `composer` binary. Place a `composer.phar` in the application root when the server has no global Composer.
 

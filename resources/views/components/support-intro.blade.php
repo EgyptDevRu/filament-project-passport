@@ -47,5 +47,14 @@
             third-party software. Laravel, Filament, and other third-party components
             remain subject to their own licenses and terms.
         </p>
+
+        <p class="fi-pp-intro__footer">
+            <a
+                href="{{ \EgyptDevRu\FilamentProjectPassport\Pages\OpenSourceLicensesPage::getUrl() }}"
+                class="fi-pp-intro__link"
+            >
+                View open source licenses
+            </a>
+        </p>
     </div>
 </section>

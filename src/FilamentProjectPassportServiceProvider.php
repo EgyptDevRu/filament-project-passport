@@ -4,12 +4,15 @@ namespace EgyptDevRu\FilamentProjectPassport;
 
 use EgyptDevRu\FilamentProjectPassport\Commands\RefreshDependencyAuditCommand;
 use EgyptDevRu\FilamentProjectPassport\Commands\RefreshLicenseAuditCommand;
+use EgyptDevRu\FilamentProjectPassport\Commands\RefreshOpenSourceLicensesCommand;
 use EgyptDevRu\FilamentProjectPassport\Pages\DependencyAuditPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\DocumentationPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\LicenseAuditPage;
+use EgyptDevRu\FilamentProjectPassport\Pages\OpenSourceLicensesPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\StatusPage;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerDependencyAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerLicenseAuditor;
+use EgyptDevRu\FilamentProjectPassport\Services\ComposerOpenSourceLicensesAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\DocumentationScanner;
 use EgyptDevRu\FilamentProjectPassport\Services\LicenseApiClient;
 use EgyptDevRu\FilamentProjectPassport\Support\EnvironmentWarning;
@@ -37,6 +40,7 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
         DocumentationPage::class,
         LicenseAuditPage::class,
         DependencyAuditPage::class,
+        OpenSourceLicensesPage::class,
     ];
 
     public function configurePackage(Package $package): void
@@ -49,6 +53,7 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
             ->hasCommands([
                 RefreshDependencyAuditCommand::class,
                 RefreshLicenseAuditCommand::class,
+                RefreshOpenSourceLicensesCommand::class,
             ]);
     }
 
@@ -57,6 +62,7 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
         $this->app->singleton(LicenseApiClient::class);
         $this->app->singleton(DocumentationScanner::class);
         $this->app->singleton(ComposerLicenseAuditor::class);
+        $this->app->singleton(ComposerOpenSourceLicensesAuditor::class);
         $this->app->singleton(ComposerDependencyAuditor::class);
 
         if (class_exists(Panel::class)) {
@@ -184,6 +190,12 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
                 ->command('filament-project-passport:refresh-license-audit')
                 ->dailyAt('03:00')
                 ->name('filament-project-passport-license-audit')
+                ->withoutOverlapping();
+
+            $schedule
+                ->command('filament-project-passport:refresh-open-source-licenses')
+                ->dailyAt('03:00')
+                ->name('filament-project-passport-open-source-licenses')
                 ->withoutOverlapping();
         });
     }

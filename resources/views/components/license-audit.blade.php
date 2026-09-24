@@ -157,4 +157,13 @@
             </table>
         </div>
     </section>
+
+    <p class="fi-pp-license-audit__footer">
+        <a
+            href="{{ \EgyptDevRu\FilamentProjectPassport\Pages\OpenSourceLicensesPage::getUrl() }}"
+            class="fi-pp-intro__link"
+        >
+            View open source licenses
+        </a>
+    </p>
 </div>

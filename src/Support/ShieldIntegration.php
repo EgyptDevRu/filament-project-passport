@@ -6,12 +6,13 @@ use EgyptDevRu\FilamentProjectPassport\FilamentProjectPassportServiceProvider;
 use EgyptDevRu\FilamentProjectPassport\Pages\DependencyAuditPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\DocumentationPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\LicenseAuditPage;
+use EgyptDevRu\FilamentProjectPassport\Pages\OpenSourceLicensesPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\StatusPage;
 use Throwable;
 
 /**
- * One Shield custom permission for Developer Support; the four Filament pages
- * are excluded from Shield page discovery so they do not invent unused keys.
+ * One Shield custom permission for Developer Support; Passport pages are
+ * excluded from Shield page discovery so they do not invent unused keys.
  */
 final class ShieldIntegration
 {
@@ -27,6 +28,7 @@ final class ShieldIntegration
         DocumentationPage::class,
         LicenseAuditPage::class,
         DependencyAuditPage::class,
+        OpenSourceLicensesPage::class,
     ];
 
     public static function isInstalled(): bool

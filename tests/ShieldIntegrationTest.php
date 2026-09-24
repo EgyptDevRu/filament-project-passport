@@ -3,6 +3,7 @@
 use EgyptDevRu\FilamentProjectPassport\Pages\DependencyAuditPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\DocumentationPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\LicenseAuditPage;
+use EgyptDevRu\FilamentProjectPassport\Pages\OpenSourceLicensesPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\StatusPage;
 use EgyptDevRu\FilamentProjectPassport\Support\PageAuthorizer;
 use EgyptDevRu\FilamentProjectPassport\Support\ShieldIntegration;
@@ -77,7 +78,7 @@ it('uses an explicit permission key when configured', function () {
         ->and(ShieldIntegration::permissionKey())->toBe('Access:Passport');
 });
 
-it('excludes the four passport pages and registers one custom shield permission', function () {
+it('excludes passport pages and registers one custom shield permission', function () {
     config()->set('filament-shield.pages.exclude', ['App\\Filament\\Pages\\Dashboard']);
     config()->set('filament-shield.exclude.pages', ['Dashboard']);
     config()->set('filament-shield.custom_permissions', []);
@@ -102,10 +103,12 @@ it('excludes the four passport pages and registers one custom shield permission'
         DocumentationPage::class,
         LicenseAuditPage::class,
         DependencyAuditPage::class,
+        OpenSourceLicensesPage::class,
         'StatusPage',
         'DocumentationPage',
         'LicenseAuditPage',
         'DependencyAuditPage',
+        'OpenSourceLicensesPage',
     ] as $id) {
         expect($v4Exclude)->toContain($id)
             ->and($v3Exclude)->toContain($id);

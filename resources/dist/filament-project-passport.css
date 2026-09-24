@@ -406,6 +406,39 @@ main.fi-main:has(.fi-pp) {
     color: #9ca3af;
 }
 
+.fi-pp-intro__footer {
+    margin: 0.25rem 0 0;
+    padding-top: 0.75rem;
+    border-top: 1px solid #e5e7eb;
+    font-size: 0.875rem;
+}
+
+.dark .fi-pp-intro__footer,
+:is(.dark) .fi-pp-intro__footer {
+    border-top-color: #374151;
+}
+
+.fi-pp-intro__link {
+    color: #2563eb;
+    font-weight: 500;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.fi-pp-intro__link:hover {
+    color: #1d4ed8;
+}
+
+.dark .fi-pp-intro__link,
+:is(.dark) .fi-pp-intro__link {
+    color: #93c5fd;
+}
+
+.dark .fi-pp-intro__link:hover,
+:is(.dark) .fi-pp-intro__link:hover {
+    color: #bfdbfe;
+}
+
 .fi-pp-status-copy {
     display: flex;
     flex-direction: column;
@@ -1379,6 +1412,12 @@ main.fi-main:has(.fi-pp) {
     margin: 0.5rem 0 0;
 }
 
+.fi-pp-license-audit__footer {
+    margin: 0;
+    padding-top: 0.25rem;
+    font-size: 0.875rem;
+}
+
 .fi-pp-license-audit__table-card {
     padding-top: 1.25rem;
 }
@@ -1955,4 +1994,146 @@ main.fi-main:has(.fi-pp) {
     to {
         transform: rotate(360deg);
     }
+}
+
+/* ---------- Open source licenses ---------- */
+
+.fi-pp-oss {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.fi-pp-oss__list-card {
+    padding: 1rem 1.25rem 1.25rem;
+}
+
+.fi-pp-oss__accordion {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.fi-pp-oss__item {
+    border: 1px solid #e5e7eb;
+    border-radius: 0.625rem;
+    background: #fff;
+    overflow: hidden;
+}
+
+.dark .fi-pp-oss__item,
+:is(.dark) .fi-pp-oss__item {
+    border-color: #374151;
+    background: #111827;
+}
+
+.fi-pp-oss__summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    cursor: pointer;
+    list-style: none;
+}
+
+.fi-pp-oss__summary::-webkit-details-marker {
+    display: none;
+}
+
+.fi-pp-oss__summary-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+}
+
+.fi-pp-oss__name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #111827;
+    word-break: break-all;
+}
+
+.dark .fi-pp-oss__name,
+:is(.dark) .fi-pp-oss__name {
+    color: #f9fafb;
+}
+
+.fi-pp-oss__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.fi-pp-oss__version {
+    font-size: 0.75rem;
+    color: #6b7280;
+}
+
+.dark .fi-pp-oss__version,
+:is(.dark) .fi-pp-oss__version {
+    color: #9ca3af;
+}
+
+.fi-pp-oss__chevron {
+    flex-shrink: 0;
+    color: #9ca3af;
+    transition: transform 0.15s ease;
+}
+
+.fi-pp-oss__item[open] > .fi-pp-oss__summary .fi-pp-oss__chevron {
+    transform: rotate(180deg);
+}
+
+.fi-pp-oss__panel {
+    padding: 0 1rem 1rem;
+    border-top: 1px solid #e5e7eb;
+}
+
+.dark .fi-pp-oss__panel,
+:is(.dark) .fi-pp-oss__panel {
+    border-top-color: #374151;
+}
+
+.fi-pp-oss__file {
+    margin: 0.75rem 0 0.5rem;
+    font-size: 0.75rem;
+}
+
+.fi-pp-oss__text {
+    margin: 0.5rem 0 0;
+    max-height: 28rem;
+    overflow: auto;
+    padding: 0.85rem 1rem;
+    border-radius: 0.5rem;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #111827;
+}
+
+.dark .fi-pp-oss__text,
+:is(.dark) .fi-pp-oss__text {
+    background: #0b1220;
+    border-color: #1f2937;
+    color: #e5e7eb;
+}
+
+.fi-pp-oss__missing {
+    margin: 0.85rem 0 0;
+    font-size: 0.875rem;
+    line-height: 1.55;
+    color: #6b7280;
+}
+
+.dark .fi-pp-oss__missing,
+:is(.dark) .fi-pp-oss__missing {
+    color: #9ca3af;
 }

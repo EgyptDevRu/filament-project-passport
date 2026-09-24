@@ -44,6 +44,16 @@ return [
                 'sort' => 4,
             ],
 
+            /*
+             * Hidden from the navigation menu; linked from Support Status →
+             * About this support status.
+             */
+            'open_source_licenses' => [
+                'label' => 'Open Source Licenses',
+                'icon' => 'heroicon-o-document-text',
+                'sort' => 5,
+            ],
+
         ],
 
     ],
