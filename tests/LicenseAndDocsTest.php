@@ -74,6 +74,17 @@ it('resolves the license endpoint outside of config', function () {
         ->and(config('filament-project-passport'))->not->toHaveKey('license_endpoint');
 });
 
+it('sets http protocol version via guzzle options without raw curl http version', function () {
+    $client = new LicenseApiClient;
+    $method = (new ReflectionClass($client))->getMethod('httpClientOptions');
+    $method->setAccessible(true);
+
+    $options = $method->invoke($client);
+
+    expect($options)->toBe(['version' => '2.0'])
+        ->and($options)->not->toHaveKey('curl');
+});
+
 it('caches license responses per host for twelve hours', function () {
     Http::fake([
         'en.egyptdev.ru/*' => Http::response([

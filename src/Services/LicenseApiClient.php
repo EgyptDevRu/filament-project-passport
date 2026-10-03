@@ -352,33 +352,17 @@ final class LicenseApiClient
     /**
      * Prefer HTTP/2 for the license API call (Cloudflare / modern HTTPS origins).
      *
-     * Uses CURL_HTTP_VERSION_2TLS when available so HTTPS negotiates HTTP/2 and
-     * falls back to HTTP/1.1 only if the peer or local libcurl cannot speak h2.
-     * Guzzle's `version` is set to 2.0 to match.
+     * Use Guzzle's request `version` option only. Passing CURLOPT_HTTP_VERSION
+     * via the raw `curl` options conflicts with Guzzle-managed request handling
+     * (rejected on recent Guzzle / Laravel HTTP clients).
      *
      * @return array<string, mixed>
      */
     private function httpClientOptions(): array
     {
-        $options = [
+        return [
             'version' => '2.0',
         ];
-
-        $curlVersion = null;
-
-        if (defined('CURL_HTTP_VERSION_2TLS')) {
-            $curlVersion = CURL_HTTP_VERSION_2TLS;
-        } elseif (defined('CURL_HTTP_VERSION_2_0')) {
-            $curlVersion = CURL_HTTP_VERSION_2_0;
-        }
-
-        if ($curlVersion !== null) {
-            $options['curl'] = [
-                CURLOPT_HTTP_VERSION => $curlVersion,
-            ];
-        }
-
-        return $options;
     }
 
     /**
