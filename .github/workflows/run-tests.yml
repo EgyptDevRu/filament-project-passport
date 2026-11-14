@@ -64,7 +64,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-interaction --no-update
+          # Composer 2.x blocks advisory-flagged versions at resolve time (not only audit).
+          # Matrix CI must still install EOL Laravel 11 / other flagged majors for compatibility.
+          composer config policy.advisories.block false
+          composer require --dev "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-interaction --no-update
           composer update --${{ matrix.stability }} --prefer-dist --no-interaction
 
       - name: List Installed Dependencies
