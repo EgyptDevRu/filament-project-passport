@@ -3,8 +3,10 @@
 use EgyptDevRu\FilamentProjectPassport\Pages\LicenseAuditPage;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerLicenseAuditor;
 use EgyptDevRu\FilamentProjectPassport\Support\CheckAge;
+use EgyptDevRu\FilamentProjectPassport\Support\ComposerPackageReplaceMap;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseStatus;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\File;
 
 it('classifies commercial-friendly licenses as compatible', function () {
     expect(LicenseStatus::classify(['MIT']))->toBe(LicenseStatus::COMPATIBLE)
@@ -27,11 +29,40 @@ it('marks copyleft-only packages as incompatible', function () {
 });
 
 it('marks review and unknown licenses as requires review', function () {
-    expect(LicenseStatus::classify(['MPL-2.0']))->toBe(LicenseStatus::REQUIRES_REVIEW)
-        ->and(LicenseStatus::classify(['LGPL-3.0']))->toBe(LicenseStatus::REQUIRES_REVIEW)
+    expect(LicenseStatus::classify(['LGPL-3.0']))->toBe(LicenseStatus::REQUIRES_REVIEW)
         ->and(LicenseStatus::classify([]))->toBe(LicenseStatus::REQUIRES_REVIEW)
         ->and(LicenseStatus::classify(['Custom-License']))->toBe(LicenseStatus::REQUIRES_REVIEW)
-        ->and(LicenseStatus::classify(['GPL-3.0', 'MPL-2.0']))->toBe(LicenseStatus::REQUIRES_REVIEW);
+        ->and(LicenseStatus::classify(['GPL-3.0', 'LGPL-3.0']))->toBe(LicenseStatus::REQUIRES_REVIEW);
+});
+
+it('treats mpl and cc-by as compatible when listed for attribution', function () {
+    expect(LicenseStatus::classify(['MPL-2.0']))->toBe(LicenseStatus::COMPATIBLE)
+        ->and(LicenseStatus::classify(['CC-BY-4.0']))->toBe(LicenseStatus::COMPATIBLE);
+});
+
+it('strips spdx only and or-later suffixes for gpl family licenses', function () {
+    foreach ([
+        'GPL-2.0-only',
+        'GPL-2.0-or-later',
+        'GPL-3.0-only',
+        'GPL-3.0-or-later',
+        'AGPL-3.0-only',
+        'AGPL-3.0-or-later',
+    ] as $license) {
+        expect(LicenseStatus::classify([$license]))->toBe(LicenseStatus::INCOMPATIBLE, $license);
+    }
+});
+
+it('treats spdx OR expressions and composer arrays as dual-license choice', function () {
+    expect(LicenseStatus::classify(['MIT OR GPL-3.0']))->toBe(LicenseStatus::COMPATIBLE)
+        ->and(LicenseStatus::classify(['(MIT OR Apache-2.0)']))->toBe(LicenseStatus::COMPATIBLE)
+        ->and(LicenseStatus::classify(['GPL-2.0 OR GPL-3.0']))->toBe(LicenseStatus::INCOMPATIBLE);
+});
+
+it('treats spdx AND expressions as requiring every license', function () {
+    expect(LicenseStatus::classify(['MIT AND Apache-2.0']))->toBe(LicenseStatus::COMPATIBLE)
+        ->and(LicenseStatus::classify(['MIT AND GPL-3.0']))->toBe(LicenseStatus::INCOMPATIBLE)
+        ->and(LicenseStatus::classify(['MIT AND LGPL-3.0']))->toBe(LicenseStatus::REQUIRES_REVIEW);
 });
 
 it('reads licenses from installed.json for all installed packages', function () {
@@ -134,4 +165,120 @@ it('labels check ages consistently', function () {
     expect(CheckAge::label(null))->toBe('unknown')
         ->and(CheckAge::label(now()->subMinutes(12)->toIso8601String()))
         ->toBe('12 minutes ago');
+});
+
+it('inherits licenses from composer replace monorepo parents', function () {
+    $path = sys_get_temp_dir().DIRECTORY_SEPARATOR.'fpp-replace-installed-'.uniqid('', true).'.json';
+
+    File::put($path, json_encode([
+        'packages' => [
+            [
+                'name' => 'acme/monorepo',
+                'version' => '1.2.3',
+                'license' => ['MIT'],
+                'replace' => [
+                    'acme/stub' => 'self.version',
+                ],
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $records = ComposerPackageReplaceMap::inheritMissing([
+            [
+                'name' => 'acme/monorepo',
+                'version' => '1.2.3',
+                'licenses' => ['MIT'],
+                'install_path' => '/tmp/acme-monorepo',
+            ],
+            [
+                'name' => 'acme/stub',
+                'version' => '—',
+                'licenses' => [],
+                'install_path' => null,
+            ],
+        ], $path);
+
+        expect($records[1]['licenses'])->toBe(['MIT'])
+            ->and($records[1]['install_path'])->toBe('/tmp/acme-monorepo')
+            ->and($records[1]['version'])->toBe('1.2.3')
+            ->and(ComposerPackageReplaceMap::replacedBy($path))->toBe(['acme/stub' => 'acme/monorepo']);
+    } finally {
+        File::delete($path);
+    }
+});
+
+it('inherits licenses from composer provide virtual packages', function () {
+    $path = sys_get_temp_dir().DIRECTORY_SEPARATOR.'fpp-provide-installed-'.uniqid('', true).'.json';
+
+    File::put($path, json_encode([
+        'packages' => [
+            [
+                'name' => 'monolog/monolog',
+                'version' => '3.0.0',
+                'license' => ['MIT'],
+                'provide' => [
+                    'psr/log-implementation' => '3.0.0',
+                ],
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $records = ComposerPackageReplaceMap::inheritMissing([
+            [
+                'name' => 'monolog/monolog',
+                'version' => '3.0.0',
+                'licenses' => ['MIT'],
+                'install_path' => '/tmp/monolog',
+            ],
+            [
+                'name' => 'psr/log-implementation',
+                'version' => '—',
+                'licenses' => [],
+                'install_path' => null,
+            ],
+        ], $path);
+
+        expect($records[1]['licenses'])->toBe(['MIT'])
+            ->and($records[1]['install_path'])->toBe('/tmp/monolog')
+            ->and($records[1]['version'])->toBe('3.0.0')
+            ->and(ComposerPackageReplaceMap::parentBy($path)['psr/log-implementation'])->toBe('monolog/monolog');
+    } finally {
+        File::delete($path);
+    }
+});
+
+it('shows non-unknown licenses for provided psr implementation stubs when present', function () {
+    $map = ComposerPackageReplaceMap::parentBy();
+
+    if ($map === [] || ! isset($map['psr/log-implementation'])) {
+        test()->markTestSkipped('No package provides psr/log-implementation in this vendor tree.');
+    }
+
+    $auditor = app(ComposerLicenseAuditor::class);
+    $auditor->forgetCache();
+    $packages = collect($auditor->audit(fresh: true)['packages']);
+    $stub = $packages->firstWhere('name', 'psr/log-implementation');
+
+    expect($stub)->not->toBeNull()
+        ->and($stub['license_label'])->not->toBe('Unknown')
+        ->and($stub['licenses'])->not->toBeEmpty();
+});
+
+it('shows non-unknown licenses for replaced illuminate packages when laravel/framework is present', function () {
+    $map = ComposerPackageReplaceMap::replacedBy();
+
+    if ($map === [] || ! isset($map['illuminate/support'])) {
+        test()->markTestSkipped('laravel/framework replace map for illuminate/support is not present in this vendor tree.');
+    }
+
+    $auditor = app(ComposerLicenseAuditor::class);
+    $auditor->forgetCache();
+    $packages = collect($auditor->audit(fresh: true)['packages']);
+    $support = $packages->firstWhere('name', 'illuminate/support');
+
+    expect($support)->not->toBeNull()
+        ->and($support['license_label'])->not->toBe('Unknown')
+        ->and($support['licenses'])->not->toBeEmpty();
 });

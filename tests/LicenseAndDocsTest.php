@@ -112,6 +112,52 @@ it('caches license responses per host for twelve hours', function () {
     Http::assertSentCount(1);
 });
 
+it('normalizes license check hosts to lowercase without www', function () {
+    $client = new LicenseApiClient;
+    $resolve = (new ReflectionClass($client))->getMethod('resolveHost');
+    $resolve->setAccessible(true);
+    $cacheKey = (new ReflectionClass($client))->getMethod('cacheKey');
+    $cacheKey->setAccessible(true);
+
+    config()->set('app.url', 'https://WWW.Example.com/path');
+
+    $host = $resolve->invoke($client);
+
+    expect($host)->toBe('example.com')
+        ->and($cacheKey->invoke($client))->toBe($cacheKey->invoke($client, 'example.com'))
+        ->and($cacheKey->invoke($client, 'WWW.Example.com'))->toBe($cacheKey->invoke($client, 'example.com'));
+
+    config()->set('app.url', 'https://Example.COM');
+    expect($resolve->invoke($client))->toBe('example.com');
+});
+
+it('sends the normalized host to the license api', function () {
+    Http::fake([
+        'en.egyptdev.ru/*' => Http::response([
+            'is_official' => true,
+            'developer_name' => 'Example Agency',
+            'email' => 'agency@example.com',
+            'phone' => null,
+            'support_warranty_until' => null,
+            'client_name' => null,
+            'project_name' => null,
+        ], 200),
+    ]);
+
+    config()->set('app.url', 'https://WWW.Example.ORG');
+
+    app(LicenseApiClient::class)->forgetCache();
+    app(LicenseApiClient::class)->fetch();
+
+    Http::assertSent(function ($request): bool {
+        $data = $request->data();
+
+        return ($data['host'] ?? null) === 'example.org'
+            && ($data['domain'] ?? null) === 'example.org'
+            && $request->header('X-Application-Host')[0] === 'example.org';
+    });
+});
+
 it('fails gracefully when the license api is unreachable', function () {
     Http::fake([
         'en.egyptdev.ru/*' => Http::response('Server Error', 500),

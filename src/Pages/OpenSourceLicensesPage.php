@@ -5,6 +5,8 @@ namespace EgyptDevRu\FilamentProjectPassport\Pages;
 use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\InteractsWithPassportNavigation;
 use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\LoadsPassportDataLazily;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerOpenSourceLicensesAuditor;
+use EgyptDevRu\FilamentProjectPassport\Services\NpmOpenSourceLicensesAuditor;
+use EgyptDevRu\FilamentProjectPassport\Services\ThirdPartyLicensesWriter;
 use EgyptDevRu\FilamentProjectPassport\Support\CheckAge;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -33,13 +35,35 @@ class OpenSourceLicensesPage extends Page
     #[Locked]
     public array $packages = [];
 
+    /**
+     * @var list<array{
+     *     name: string,
+     *     version: string,
+     *     licenses: list<string>,
+     *     license_label: string,
+     *     license_text: string,
+     *     license_file: string|null,
+     *     has_license_text: bool
+     * }>
+     */
+    #[Locked]
+    public array $npmPackages = [];
+
     #[Locked]
     public ?string $checkedAt = null;
 
     #[Locked]
+    public ?string $npmCheckedAt = null;
+
+    #[Locked]
     public bool $fromCache = false;
 
+    #[Locked]
+    public bool $npmFromCache = false;
+
     public string $search = '';
+
+    public string $npmSearch = '';
 
     public function getView(): string
     {
@@ -84,27 +108,38 @@ class OpenSourceLicensesPage extends Page
      */
     public function refreshOpenSourceLicenses(): void
     {
-        $result = app(ComposerOpenSourceLicensesAuditor::class)->refresh();
+        $composer = app(ComposerOpenSourceLicensesAuditor::class)->refresh();
+        $npm = app(NpmOpenSourceLicensesAuditor::class)->refresh();
+        app(ThirdPartyLicensesWriter::class)->write($composer['packages'], $npm['packages']);
 
-        $this->packages = $result['packages'];
-        $this->checkedAt = $result['checked_at'];
+        $this->packages = $composer['packages'];
+        $this->checkedAt = $composer['checked_at'];
         $this->fromCache = false;
+
+        $this->npmPackages = $npm['packages'];
+        $this->npmCheckedAt = $npm['checked_at'];
+        $this->npmFromCache = false;
         $this->ready = true;
 
         Notification::make()
             ->title('Open source licenses refreshed')
-            ->body('Composer package license files were re-read for this application.')
+            ->body('Composer and NPM package license files were re-read and THIRD-PARTY-LICENSES.txt was updated.')
             ->success()
             ->send();
     }
 
     protected function hydratePassportData(): void
     {
-        $result = app(ComposerOpenSourceLicensesAuditor::class)->audit();
+        $composer = app(ComposerOpenSourceLicensesAuditor::class)->audit();
+        $npm = app(NpmOpenSourceLicensesAuditor::class)->audit();
 
-        $this->packages = $result['packages'];
-        $this->checkedAt = $result['checked_at'];
-        $this->fromCache = $result['from_cache'];
+        $this->packages = $composer['packages'];
+        $this->checkedAt = $composer['checked_at'];
+        $this->fromCache = $composer['from_cache'];
+
+        $this->npmPackages = $npm['packages'];
+        $this->npmCheckedAt = $npm['checked_at'];
+        $this->npmFromCache = $npm['from_cache'];
     }
 
     public function lastCheckSummary(): string
@@ -112,9 +147,19 @@ class OpenSourceLicensesPage extends Page
         return 'Last check: '.CheckAge::label($this->checkedAt);
     }
 
+    public function npmLastCheckSummary(): string
+    {
+        return 'Last check: '.CheckAge::label($this->npmCheckedAt);
+    }
+
     public function updatedSearch(): void
     {
         // Livewire re-renders filtered accordion items.
+    }
+
+    public function updatedNpmSearch(): void
+    {
+        // Livewire re-renders filtered NPM accordion items.
     }
 
     /**
@@ -122,29 +167,58 @@ class OpenSourceLicensesPage extends Page
      */
     public function getFilteredPackagesProperty(): array
     {
-        $rows = $this->packages;
-        $search = trim(mb_strtolower($this->search));
+        return $this->filterPackages($this->packages, $this->search);
+    }
 
-        if ($search === '') {
-            return $rows;
-        }
-
-        return array_values(array_filter(
-            $rows,
-            function (array $row) use ($search): bool {
-                $haystack = mb_strtolower(
-                    $row['name'].' '.$row['version'].' '.$row['license_label']
-                );
-
-                return str_contains($haystack, $search);
-            }
-        ));
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getFilteredNpmPackagesProperty(): array
+    {
+        return $this->filterPackages($this->npmPackages, $this->npmSearch);
     }
 
     public function packagesWithLicenseTextCount(): int
     {
+        return $this->countWithLicenseText($this->packages);
+    }
+
+    public function npmPackagesWithLicenseTextCount(): int
+    {
+        return $this->countWithLicenseText($this->npmPackages);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $packages
+     * @return list<array<string, mixed>>
+     */
+    private function filterPackages(array $packages, string $search): array
+    {
+        $needle = trim(mb_strtolower($search));
+
+        if ($needle === '') {
+            return $packages;
+        }
+
+        return array_values(array_filter(
+            $packages,
+            function (array $row) use ($needle): bool {
+                $haystack = mb_strtolower(
+                    $row['name'].' '.$row['version'].' '.$row['license_label']
+                );
+
+                return str_contains($haystack, $needle);
+            }
+        ));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $packages
+     */
+    private function countWithLicenseText(array $packages): int
+    {
         return count(array_filter(
-            $this->packages,
+            $packages,
             fn (array $package): bool => (bool) ($package['has_license_text'] ?? false)
         ));
     }

@@ -40,7 +40,7 @@
         @if (! $this->ready)
             @include('filament-project-passport::components.loading-state', [
                 'title' => 'Auditing licenses…',
-                'message' => 'Scanning Composer package licenses. This may take a moment on the first visit.',
+                'message' => 'Scanning Composer and NPM package licenses. This may take a moment on the first visit.',
             ])
         @else
             @include('filament-project-passport::components.license-audit')

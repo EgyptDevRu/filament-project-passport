@@ -15,6 +15,9 @@ use EgyptDevRu\FilamentProjectPassport\Services\ComposerLicenseAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerOpenSourceLicensesAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\DocumentationScanner;
 use EgyptDevRu\FilamentProjectPassport\Services\LicenseApiClient;
+use EgyptDevRu\FilamentProjectPassport\Services\NpmLicenseAuditor;
+use EgyptDevRu\FilamentProjectPassport\Services\NpmOpenSourceLicensesAuditor;
+use EgyptDevRu\FilamentProjectPassport\Services\ThirdPartyLicensesWriter;
 use EgyptDevRu\FilamentProjectPassport\Support\EnvironmentWarning;
 use EgyptDevRu\FilamentProjectPassport\Support\PageAuthorizer;
 use EgyptDevRu\FilamentProjectPassport\Support\ShieldIntegration;
@@ -63,6 +66,9 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
         $this->app->singleton(DocumentationScanner::class);
         $this->app->singleton(ComposerLicenseAuditor::class);
         $this->app->singleton(ComposerOpenSourceLicensesAuditor::class);
+        $this->app->singleton(NpmLicenseAuditor::class);
+        $this->app->singleton(NpmOpenSourceLicensesAuditor::class);
+        $this->app->singleton(ThirdPartyLicensesWriter::class);
         $this->app->singleton(ComposerDependencyAuditor::class);
 
         if (class_exists(Panel::class)) {

@@ -1,9 +1,15 @@
+@php
+    $incompatibleComposer = $this->incompatiblePackages;
+    $incompatibleNpm = $this->incompatibleNpmPackages;
+    $allIncompatible = array_merge($incompatibleComposer, $incompatibleNpm);
+@endphp
+
 <div class="fi-pp-license-audit">
     <section class="fi-pp-card">
         <header class="fi-pp-card__header">
             <h3 class="fi-pp-card__title">License Audit</h3>
             <p class="fi-pp-card__desc">
-                Review the licenses of all Composer packages installed in this application
+                Review the licenses of Composer and NPM packages installed in this application
                 (including transitive dependencies) and verify their compatibility with
                 commercial software distribution.
             </p>
@@ -40,7 +46,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach ($this->incompatiblePackages as $package)
+                            @foreach ($allIncompatible as $package)
                                 <tr wire:key="incompat-{{ $package['name'] }}">
                                     <td><span class="fi-pp-mono">{{ $package['name'] }}</span></td>
                                     <td>{{ $package['version'] }}</td>
@@ -63,7 +69,7 @@
                     No incompatible package licenses were detected.
                 </p>
                 <p class="fi-pp-license-summary__text">
-                    Based on the installed Composer packages, this application may be
+                    Based on the installed Composer and NPM packages, this application may be
                     commercially distributed.
                 </p>
                 <p class="fi-pp-license-summary__text">
@@ -75,9 +81,16 @@
     @endif
 
     <section class="fi-pp-card fi-pp-license-audit__table-card">
+        <header class="fi-pp-card__header">
+            <h3 class="fi-pp-card__title">Composer packages</h3>
+            <p class="fi-pp-card__desc">
+                Licenses declared in Composer metadata for installed PHP packages.
+            </p>
+        </header>
+
         <div class="fi-pp-license-audit__toolbar">
             <label class="fi-pp-license-audit__search">
-                <span class="sr-only">Search packages</span>
+                <span class="sr-only">Search Composer packages</span>
                 <x-filament::icon icon="heroicon-m-magnifying-glass" class="fi-pp-license-audit__search-icon h-4 w-4" />
                 <input
                     type="search"
@@ -150,6 +163,106 @@
                         <tr>
                             <td colspan="4" class="fi-pp-license-audit__empty">
                                 No installed Composer packages matched your search.
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="fi-pp-card fi-pp-license-audit__table-card">
+        <header class="fi-pp-card__header">
+            <h3 class="fi-pp-card__title">NPM packages</h3>
+            <p class="fi-pp-card__desc">
+                Licenses declared in package.json / package-lock.json for frontend dependencies.
+            </p>
+            @include('filament-project-passport::components.cache-status', [
+                'checkedAt' => $this->npmCheckedAt,
+                'fromCache' => $this->npmFromCache,
+                'scheduleHint' => 'Auto-refresh: daily at 03:00 — only when the cache is missing or older than 14 days.',
+            ])
+        </header>
+
+        <div class="fi-pp-license-audit__toolbar">
+            <label class="fi-pp-license-audit__search">
+                <span class="sr-only">Search NPM packages</span>
+                <x-filament::icon icon="heroicon-m-magnifying-glass" class="fi-pp-license-audit__search-icon h-4 w-4" />
+                <input
+                    type="search"
+                    wire:model.live.debounce.300ms="npmSearch"
+                    placeholder="Search packages, licenses, status…"
+                    class="fi-pp-license-audit__search-input"
+                />
+            </label>
+            <p class="fi-pp-muted">
+                {{ count($this->filteredNpmPackages) }}
+                /
+                {{ count($this->npmPackages) }}
+                installed packages
+            </p>
+        </div>
+
+        <div class="fi-pp-license-audit__table-wrap">
+            <table class="fi-pp-license-audit__table">
+                <thead>
+                    <tr>
+                        <th>
+                            <button type="button" wire:click="sortNpmBy('name')" class="fi-pp-license-audit__sort">
+                                Package
+                                @if ($npmSortColumn === 'name')
+                                    <span aria-hidden="true">{{ $npmSortDirection === 'asc' ? '↑' : '↓' }}</span>
+                                @endif
+                            </button>
+                        </th>
+                        <th>
+                            <button type="button" wire:click="sortNpmBy('version')" class="fi-pp-license-audit__sort">
+                                Version
+                                @if ($npmSortColumn === 'version')
+                                    <span aria-hidden="true">{{ $npmSortDirection === 'asc' ? '↑' : '↓' }}</span>
+                                @endif
+                            </button>
+                        </th>
+                        <th>
+                            <button type="button" wire:click="sortNpmBy('license_label')" class="fi-pp-license-audit__sort">
+                                License
+                                @if ($npmSortColumn === 'license_label')
+                                    <span aria-hidden="true">{{ $npmSortDirection === 'asc' ? '↑' : '↓' }}</span>
+                                @endif
+                            </button>
+                        </th>
+                        <th>
+                            <button type="button" wire:click="sortNpmBy('status')" class="fi-pp-license-audit__sort">
+                                Status
+                                @if ($npmSortColumn === 'status')
+                                    <span aria-hidden="true">{{ $npmSortDirection === 'asc' ? '↑' : '↓' }}</span>
+                                @endif
+                            </button>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse ($this->filteredNpmPackages as $package)
+                        <tr wire:key="npm-pkg-{{ $package['name'] }}">
+                            <td>
+                                <span class="fi-pp-mono">{{ $package['name'] }}</span>
+                            </td>
+                            <td>{{ $package['version'] }}</td>
+                            <td>{{ $package['license_label'] }}</td>
+                            <td>
+                                <span class="{{ $this->statusBadgeClass($package['status']) }}">
+                                    {{ $package['status_label'] }}
+                                </span>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="4" class="fi-pp-license-audit__empty">
+                                @if (count($this->npmPackages) === 0)
+                                    No package.json / package-lock.json found in the application root, or no NPM packages were detected.
+                                @else
+                                    No installed NPM packages matched your search.
+                                @endif
                             </td>
                         </tr>
                     @endforelse

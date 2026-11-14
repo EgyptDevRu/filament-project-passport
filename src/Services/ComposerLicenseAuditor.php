@@ -3,6 +3,7 @@
 namespace EgyptDevRu\FilamentProjectPassport\Services;
 
 use Composer\InstalledVersions;
+use EgyptDevRu\FilamentProjectPassport\Support\ComposerPackageReplaceMap;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseStatus;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -207,12 +208,31 @@ final class ComposerLicenseAuditor
     private function installedPackageRecords(): array
     {
         $fromJson = $this->recordsFromInstalledJson();
+        $fromVersions = $this->recordsFromInstalledVersionsFallback();
 
-        if ($fromJson !== []) {
-            return $fromJson;
+        if ($fromJson === [] && $fromVersions === []) {
+            return [];
         }
 
-        return $this->recordsFromInstalledVersionsFallback();
+        if ($fromJson === []) {
+            return ComposerPackageReplaceMap::inheritMissing($fromVersions);
+        }
+
+        // Merge replace/monorepo stubs that InstalledVersions lists but installed.json omits.
+        $known = [];
+
+        foreach ($fromJson as $record) {
+            $known[$record['name']] = true;
+        }
+
+        foreach ($fromVersions as $record) {
+            if (! isset($known[$record['name']])) {
+                $fromJson[] = $record;
+                $known[$record['name']] = true;
+            }
+        }
+
+        return ComposerPackageReplaceMap::inheritMissing($fromJson);
     }
 
     /**

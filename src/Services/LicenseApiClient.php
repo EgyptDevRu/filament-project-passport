@@ -176,9 +176,11 @@ final class LicenseApiClient
 
     public function cacheKey(?string $host = null): string
     {
-        $host ??= $this->resolveHost();
+        $host = $host !== null && $host !== ''
+            ? $this->normalizeHost($host)
+            : $this->resolveHost();
 
-        return 'filament-project-passport.license.'.md5(strtolower($host));
+        return 'filament-project-passport.license.'.md5($host);
     }
 
     public function endpoint(): string
@@ -399,16 +401,18 @@ final class LicenseApiClient
     }
 
     /**
-     * Prefers the host configured via `config('app.url')`. Falls back to the
-     * current request's host only for local/dev environments where APP_URL
-     * is unset or still points at localhost.
+     * Prefers the host configured via `config('app.url')` (not raw env('APP_URL')).
+     * Falls back to the current request's host only for local/dev environments
+     * where APP_URL is unset or still points at localhost.
+     *
+     * Background API dispatch is skipped only when app()->runningUnitTests().
      */
     private function resolveHost(): string
     {
         $configured = $this->configuredAppHost();
 
         if ($configured !== null) {
-            return $configured;
+            return $this->normalizeHost($configured);
         }
 
         try {
@@ -417,7 +421,26 @@ final class LicenseApiClient
             $host = null;
         }
 
-        return is_string($host) && $host !== '' ? $host : 'unknown.host';
+        if (is_string($host) && $host !== '') {
+            return $this->normalizeHost($host);
+        }
+
+        return 'unknown.host';
+    }
+
+    /**
+     * Lowercase and strip a single leading "www." so license checks and cache
+     * keys treat www.example.com and example.com as the same host.
+     */
+    private function normalizeHost(string $host): string
+    {
+        $host = strtolower(trim($host));
+
+        if (str_starts_with($host, 'www.')) {
+            $host = substr($host, 4);
+        }
+
+        return $host !== '' ? $host : 'unknown.host';
     }
 
     private function configuredAppHost(): ?string

@@ -3,6 +3,7 @@
 namespace EgyptDevRu\FilamentProjectPassport\Services;
 
 use Composer\InstalledVersions;
+use EgyptDevRu\FilamentProjectPassport\Support\ComposerPackageReplaceMap;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
@@ -197,10 +198,15 @@ final class ComposerOpenSourceLicensesAuditor
 
         if ($fromVersions !== []) {
             $licensesByName = [];
+            $pathsByName = [];
 
             foreach ($this->recordsFromInstalledJson() as $record) {
                 if ($record['licenses'] !== []) {
                     $licensesByName[$record['name']] = $record['licenses'];
+                }
+
+                if (is_string($record['install_path']) && $record['install_path'] !== '') {
+                    $pathsByName[$record['name']] = $record['install_path'];
                 }
             }
 
@@ -208,12 +214,21 @@ final class ComposerOpenSourceLicensesAuditor
                 if ($record['licenses'] === [] && isset($licensesByName[$record['name']])) {
                     $fromVersions[$index]['licenses'] = $licensesByName[$record['name']];
                 }
+
+                if (
+                    ($record['install_path'] === null || $record['install_path'] === '')
+                    && isset($pathsByName[$record['name']])
+                ) {
+                    $fromVersions[$index]['install_path'] = $pathsByName[$record['name']];
+                }
             }
 
-            return $fromVersions;
+            return ComposerPackageReplaceMap::inheritMissing($fromVersions);
         }
 
-        return $this->enrichInstallPaths($this->recordsFromInstalledJson());
+        return ComposerPackageReplaceMap::inheritMissing(
+            $this->enrichInstallPaths($this->recordsFromInstalledJson())
+        );
     }
 
     /**

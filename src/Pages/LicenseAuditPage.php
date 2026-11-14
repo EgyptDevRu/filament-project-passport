@@ -5,6 +5,8 @@ namespace EgyptDevRu\FilamentProjectPassport\Pages;
 use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\InteractsWithPassportNavigation;
 use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\LoadsPassportDataLazily;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerLicenseAuditor;
+use EgyptDevRu\FilamentProjectPassport\Services\NpmLicenseAuditor;
+use EgyptDevRu\FilamentProjectPassport\Services\ThirdPartyLicensesWriter;
 use EgyptDevRu\FilamentProjectPassport\Support\CheckAge;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseStatus;
 use Filament\Notifications\Notification;
@@ -31,13 +33,34 @@ class LicenseAuditPage extends Page
     #[Locked]
     public array $packages = [];
 
+    /**
+     * @var list<array{
+     *     name: string,
+     *     version: string,
+     *     licenses: list<string>,
+     *     license_label: string,
+     *     status: string,
+     *     status_label: string
+     * }>
+     */
+    #[Locked]
+    public array $npmPackages = [];
+
     #[Locked]
     public ?string $checkedAt = null;
 
     #[Locked]
+    public ?string $npmCheckedAt = null;
+
+    #[Locked]
     public bool $fromCache = false;
 
+    #[Locked]
+    public bool $npmFromCache = false;
+
     public string $search = '';
+
+    public string $npmSearch = '';
 
     /**
      * Only ever set via sortBy().
@@ -47,6 +70,12 @@ class LicenseAuditPage extends Page
 
     #[Locked]
     public string $sortDirection = 'asc';
+
+    #[Locked]
+    public string $npmSortColumn = 'name';
+
+    #[Locked]
+    public string $npmSortDirection = 'asc';
 
     public function getView(): string
     {
@@ -78,27 +107,38 @@ class LicenseAuditPage extends Page
      */
     public function refreshLicenseAudit(): void
     {
-        $result = app(ComposerLicenseAuditor::class)->refresh();
+        $composer = app(ComposerLicenseAuditor::class)->refresh();
+        $npm = app(NpmLicenseAuditor::class)->refresh();
+        app(ThirdPartyLicensesWriter::class)->refresh(fresh: true);
 
-        $this->packages = $result['packages'];
-        $this->checkedAt = $result['checked_at'];
+        $this->packages = $composer['packages'];
+        $this->checkedAt = $composer['checked_at'];
         $this->fromCache = false;
+
+        $this->npmPackages = $npm['packages'];
+        $this->npmCheckedAt = $npm['checked_at'];
+        $this->npmFromCache = false;
         $this->ready = true;
 
         Notification::make()
             ->title('License audit refreshed')
-            ->body('Composer package licenses were re-checked for this application.')
+            ->body('Composer and NPM package licenses were re-checked and THIRD-PARTY-LICENSES.txt was updated.')
             ->success()
             ->send();
     }
 
     protected function hydratePassportData(): void
     {
-        $result = app(ComposerLicenseAuditor::class)->audit();
+        $composer = app(ComposerLicenseAuditor::class)->audit();
+        $npm = app(NpmLicenseAuditor::class)->audit();
 
-        $this->packages = $result['packages'];
-        $this->checkedAt = $result['checked_at'];
-        $this->fromCache = $result['from_cache'];
+        $this->packages = $composer['packages'];
+        $this->checkedAt = $composer['checked_at'];
+        $this->fromCache = $composer['from_cache'];
+
+        $this->npmPackages = $npm['packages'];
+        $this->npmCheckedAt = $npm['checked_at'];
+        $this->npmFromCache = $npm['from_cache'];
     }
 
     public function lastCheckSummary(): string
@@ -106,9 +146,19 @@ class LicenseAuditPage extends Page
         return 'Last check: '.CheckAge::label($this->checkedAt);
     }
 
+    public function npmLastCheckSummary(): string
+    {
+        return 'Last check: '.CheckAge::label($this->npmCheckedAt);
+    }
+
     public function updatedSearch(): void
     {
         // Livewire re-renders filtered rows.
+    }
+
+    public function updatedNpmSearch(): void
+    {
+        // Livewire re-renders filtered NPM rows.
     }
 
     public function sortBy(string $column): void
@@ -127,38 +177,46 @@ class LicenseAuditPage extends Page
         $this->sortDirection = 'asc';
     }
 
+    public function sortNpmBy(string $column): void
+    {
+        if (! in_array($column, ['name', 'version', 'license_label', 'status'], true)) {
+            return;
+        }
+
+        if ($this->npmSortColumn === $column) {
+            $this->npmSortDirection = $this->npmSortDirection === 'asc' ? 'desc' : 'asc';
+
+            return;
+        }
+
+        $this->npmSortColumn = $column;
+        $this->npmSortDirection = 'asc';
+    }
+
     /**
      * @return list<array<string, mixed>>
      */
     public function getFilteredPackagesProperty(): array
     {
-        $rows = $this->packages;
-        $search = trim(mb_strtolower($this->search));
+        return $this->filterAndSortPackages(
+            $this->packages,
+            $this->search,
+            $this->sortColumn,
+            $this->sortDirection,
+        );
+    }
 
-        if ($search !== '') {
-            $rows = array_values(array_filter(
-                $rows,
-                function (array $row) use ($search): bool {
-                    $haystack = mb_strtolower(
-                        $row['name'].' '.$row['version'].' '.$row['license_label'].' '.$row['status_label']
-                    );
-
-                    return str_contains($haystack, $search);
-                }
-            ));
-        }
-
-        $column = $this->sortColumn;
-        $direction = $this->sortDirection === 'desc' ? -1 : 1;
-
-        usort($rows, function (array $a, array $b) use ($column, $direction): int {
-            $left = (string) ($a[$column] ?? '');
-            $right = (string) ($b[$column] ?? '');
-
-            return $direction * strcasecmp($left, $right);
-        });
-
-        return $rows;
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getFilteredNpmPackagesProperty(): array
+    {
+        return $this->filterAndSortPackages(
+            $this->npmPackages,
+            $this->npmSearch,
+            $this->npmSortColumn,
+            $this->npmSortDirection,
+        );
     }
 
     /**
@@ -169,9 +227,18 @@ class LicenseAuditPage extends Page
         return app(ComposerLicenseAuditor::class)->incompatiblePackages($this->packages);
     }
 
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getIncompatibleNpmPackagesProperty(): array
+    {
+        return app(NpmLicenseAuditor::class)->incompatiblePackages($this->npmPackages);
+    }
+
     public function hasIncompatiblePackages(): bool
     {
-        return $this->getIncompatiblePackagesProperty() !== [];
+        return $this->getIncompatiblePackagesProperty() !== []
+            || $this->getIncompatibleNpmPackagesProperty() !== [];
     }
 
     public function statusBadgeClass(string $status): string
@@ -181,5 +248,43 @@ class LicenseAuditPage extends Page
             LicenseStatus::INCOMPATIBLE => 'fi-pp-badge fi-pp-badge--danger',
             default => 'fi-pp-badge fi-pp-badge--warning',
         };
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $packages
+     * @return list<array<string, mixed>>
+     */
+    private function filterAndSortPackages(
+        array $packages,
+        string $search,
+        string $sortColumn,
+        string $sortDirection,
+    ): array {
+        $rows = $packages;
+        $needle = trim(mb_strtolower($search));
+
+        if ($needle !== '') {
+            $rows = array_values(array_filter(
+                $rows,
+                function (array $row) use ($needle): bool {
+                    $haystack = mb_strtolower(
+                        $row['name'].' '.$row['version'].' '.$row['license_label'].' '.$row['status_label']
+                    );
+
+                    return str_contains($haystack, $needle);
+                }
+            ));
+        }
+
+        $direction = $sortDirection === 'desc' ? -1 : 1;
+
+        usort($rows, function (array $a, array $b) use ($sortColumn, $direction): int {
+            $left = (string) ($a[$sortColumn] ?? '');
+            $right = (string) ($b[$sortColumn] ?? '');
+
+            return $direction * strcasecmp($left, $right);
+        });
+
+        return $rows;
     }
 }

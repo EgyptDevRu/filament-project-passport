@@ -2,6 +2,7 @@
 
 use EgyptDevRu\FilamentProjectPassport\Pages\OpenSourceLicensesPage;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerOpenSourceLicensesAuditor;
+use EgyptDevRu\FilamentProjectPassport\Support\ComposerPackageReplaceMap;
 use Illuminate\Support\Facades\Cache;
 
 it('reads open source license texts from installed packages', function () {
@@ -101,4 +102,27 @@ it('filters open source packages by search', function () {
     expect($filtered)->toHaveCount(1)
         ->and($filtered[0]['name'])->toBe('acme/beta')
         ->and($page->packagesWithLicenseTextCount())->toBe(1);
+});
+
+it('inherits open source license text path from composer replace parents when present', function () {
+    $map = ComposerPackageReplaceMap::replacedBy();
+
+    if ($map === [] || ! isset($map['illuminate/support'])) {
+        test()->markTestSkipped('laravel/framework replace map for illuminate/support is not present in this vendor tree.');
+    }
+
+    $auditor = app(ComposerOpenSourceLicensesAuditor::class);
+    $auditor->forgetCache();
+    $packages = collect($auditor->audit(fresh: true)['packages']);
+    $support = $packages->firstWhere('name', 'illuminate/support');
+    $framework = $packages->firstWhere('name', 'laravel/framework');
+
+    expect($support)->not->toBeNull()
+        ->and($support['license_label'])->not->toBe('Unknown')
+        ->and($support['licenses'])->not->toBeEmpty();
+
+    if ($framework !== null && ($framework['has_license_text'] ?? false)) {
+        expect($support['has_license_text'])->toBeTrue()
+            ->and($support['license_text'])->not->toBe('');
+    }
 });
