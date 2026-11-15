@@ -822,4 +822,3 @@ it('marks below-minimum php builds after the security release as suspect', funct
         ->and($missingBuild['build_date'])->toBeNull()
         ->and(PhpRuntimeStatus::parseBuildDate('Oct 21 2026 14:00:00')?->format('Y-m-d H:i'))->toBe('2026-10-21 14:00');
 });
-

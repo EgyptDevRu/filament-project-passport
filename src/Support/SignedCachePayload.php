@@ -28,7 +28,6 @@ final class SignedCachePayload
     }
 
     /**
-     * @param  mixed  $cached
      * @return array<string, mixed>|null Null when missing or tampered.
      */
     public static function open(mixed $cached): ?array
@@ -85,10 +84,6 @@ final class SignedCachePayload
         return $appKey;
     }
 
-    /**
-     * @param  mixed  $value
-     * @return mixed
-     */
     private static function normalize(mixed $value): mixed
     {
         if (! is_array($value)) {

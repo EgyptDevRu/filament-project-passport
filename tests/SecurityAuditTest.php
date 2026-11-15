@@ -1,5 +1,6 @@
 <?php
 
+use EgyptDevRu\FilamentProjectPassport\FilamentProjectPassportServiceProvider;
 use EgyptDevRu\FilamentProjectPassport\Pages\SecurityAuditPage;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerDependencyAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\LicenseApiClient;
@@ -7,6 +8,7 @@ use EgyptDevRu\FilamentProjectPassport\Services\NpmDependencyAuditor;
 use EgyptDevRu\FilamentProjectPassport\Support\NpmRuntime;
 use EgyptDevRu\FilamentProjectPassport\Support\PageAuthorizer;
 use EgyptDevRu\FilamentProjectPassport\Support\PhpRuntimeStatus;
+use EgyptDevRu\FilamentProjectPassport\Support\ShieldIntegration;
 use EgyptDevRu\FilamentProjectPassport\Support\SignedCachePayload;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -109,9 +111,9 @@ it('rescans php2shell when security audit refresh runs', function () {
 });
 
 it('registers security audit in the package page list and shield exclusions', function () {
-    expect(\EgyptDevRu\FilamentProjectPassport\FilamentProjectPassportServiceProvider::PAGES)
+    expect(FilamentProjectPassportServiceProvider::PAGES)
         ->toContain(SecurityAuditPage::class)
-        ->and(\EgyptDevRu\FilamentProjectPassport\Support\ShieldIntegration::PAGE_CLASSES)
+        ->and(ShieldIntegration::PAGE_CLASSES)
         ->toContain(SecurityAuditPage::class);
 });
 

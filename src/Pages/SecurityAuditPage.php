@@ -9,6 +9,7 @@ use EgyptDevRu\FilamentProjectPassport\Services\NpmDependencyAuditor;
 use EgyptDevRu\FilamentProjectPassport\Support\CheckAge;
 use EgyptDevRu\FilamentProjectPassport\Support\PhpRuntimeStatus;
 use EgyptDevRu\FilamentProjectPassport\Support\SignedCachePayload;
+use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Illuminate\Support\Facades\Cache;
@@ -111,7 +112,7 @@ class SecurityAuditPage extends Page
     /**
      * Refresh lives in the page body only — never as a Filament header action.
      *
-     * @return array<int, \Filament\Actions\Action>
+     * @return array<int, Action>
      */
     protected function getHeaderActions(): array
     {

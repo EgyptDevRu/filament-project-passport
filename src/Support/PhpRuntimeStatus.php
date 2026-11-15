@@ -6,6 +6,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Symfony\Component\Process\Process;
 use Throwable;
 
 /**
@@ -461,7 +462,7 @@ final class PhpRuntimeStatus
             $command = DIRECTORY_SEPARATOR === '\\'
                 ? ['where', 'php']
                 : ['sh', '-c', 'command -v php; ls /usr/bin/php* /usr/local/bin/php* 2>/dev/null'];
-            $process = new \Symfony\Component\Process\Process($command, null, ComposerBinary::inheritedEnvironment(), null, 5.0);
+            $process = new Process($command, null, ComposerBinary::inheritedEnvironment(), null, 5.0);
             $process->run();
             $output = trim($process->getOutput()."\n".$process->getErrorOutput());
         } catch (Throwable) {
@@ -589,7 +590,7 @@ final class PhpRuntimeStatus
     private static function metaFromBinary(string $path): ?array
     {
         try {
-            $process = new \Symfony\Component\Process\Process(
+            $process = new Process(
                 [$path, '-r', 'echo PHP_VERSION, "\\n", (defined("PHP_BUILD_DATE") ? PHP_BUILD_DATE : "");'],
                 null,
                 ComposerBinary::inheritedEnvironment(),

@@ -10,6 +10,7 @@ use EgyptDevRu\FilamentProjectPassport\Services\NpmDependencyAuditor;
 use EgyptDevRu\FilamentProjectPassport\Support\CheckAge;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Support\Carbon;
 use Livewire\Attributes\Locked;
 
 class DependencyAuditPage extends Page
@@ -374,7 +375,7 @@ class DependencyAuditPage extends Page
         }
 
         try {
-            return \Illuminate\Support\Carbon::parse($checkedAt)->diffInDays(now()) >= ComposerDependencyAuditor::CACHE_FRESH_DAYS;
+            return Carbon::parse($checkedAt)->diffInDays(now()) >= ComposerDependencyAuditor::CACHE_FRESH_DAYS;
         } catch (\Throwable) {
             return false;
         }

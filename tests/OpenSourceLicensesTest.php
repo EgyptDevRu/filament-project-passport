@@ -3,7 +3,6 @@
 use EgyptDevRu\FilamentProjectPassport\Pages\OpenSourceLicensesPage;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerOpenSourceLicensesAuditor;
 use EgyptDevRu\FilamentProjectPassport\Support\ComposerPackageReplaceMap;
-use Illuminate\Support\Facades\Cache;
 
 it('reads open source license texts from installed packages', function () {
     $auditor = app(ComposerOpenSourceLicensesAuditor::class);

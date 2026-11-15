@@ -5,7 +5,6 @@ use EgyptDevRu\FilamentProjectPassport\Services\ComposerLicenseAuditor;
 use EgyptDevRu\FilamentProjectPassport\Support\CheckAge;
 use EgyptDevRu\FilamentProjectPassport\Support\ComposerPackageReplaceMap;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseStatus;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 
 it('classifies commercial-friendly licenses as compatible', function () {

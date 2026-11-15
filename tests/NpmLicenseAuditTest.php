@@ -6,7 +6,6 @@ use EgyptDevRu\FilamentProjectPassport\Services\NpmLicenseAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\NpmOpenSourceLicensesAuditor;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseStatus;
 use EgyptDevRu\FilamentProjectPassport\Support\NpmPackageInventory;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 
 function npmTestCleanup(): void
