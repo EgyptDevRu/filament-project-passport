@@ -59,8 +59,19 @@ trait InteractsWithPassportNavigation
             ->icon(is_string($icon) ? $icon : static::passportDefaultIcon())
             ->group(static::getNavigationGroup())
             ->sort($resolvedSort)
-            ->url(static::getUrl())
-            ->isActiveWhen(fn (): bool => request()->routeIs(static::getRouteName()));
+            ->url(static::getUrl());
+
+        $isActive = fn (): bool => request()->routeIs(static::getRouteName());
+
+        // Filament v4+/v5: activeWhen(); Filament v3: isActiveWhen() (deprecated).
+        // Resolve dynamically so phpstan-deprecation-rules does not hard-fail on v3.
+        $activeMethod = method_exists($item, 'activeWhen')
+            ? 'activeWhen'
+            : (method_exists($item, 'isActiveWhen') ? 'isActiveWhen' : null);
+
+        if (is_string($activeMethod)) {
+            $item->{$activeMethod}($isActive);
+        }
 
         // ->key() is a newer builder method, not guaranteed present across
         // every Filament major this package declares support for.

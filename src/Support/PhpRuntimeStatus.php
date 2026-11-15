@@ -196,7 +196,13 @@ final class PhpRuntimeStatus
     private static function assembleReport(array $binaries, ?string $checkedAt, bool $fromCache): array
     {
         $runtimeVersion = PHP_VERSION;
-        $runtimeBuildDate = defined('PHP_BUILD_DATE') && is_string(PHP_BUILD_DATE) ? PHP_BUILD_DATE : null;
+        $runtimeBuildDate = null;
+
+        if (defined('PHP_BUILD_DATE')) {
+            $buildDate = trim((string) constant('PHP_BUILD_DATE'));
+            $runtimeBuildDate = $buildDate !== '' ? $buildDate : null;
+        }
+
         $runtime = self::classifyVersion($runtimeVersion, $runtimeBuildDate);
         $runtime['version'] = $runtimeVersion;
 
@@ -559,7 +565,7 @@ final class PhpRuntimeStatus
             $roots[] = $userProfile.'\\scoop\\apps\\php';
         }
 
-        return array_values(array_unique(array_filter($roots, fn (string $path): bool => $path !== '')));
+        return array_values(array_unique($roots));
     }
 
     /**
