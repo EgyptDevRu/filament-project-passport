@@ -18,14 +18,21 @@
             Runtime PHP health for the server running this application.
             Security floor: builds at or above 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12
             (21 Oct 2026 security release, after 14:00 UTC).
+            Other host PHP binaries are cached for 7 days and refreshed with Security Audit
+            (or the daily Dependency Audit schedule).
         </p>
+        @include('filament-project-passport::components.cache-status', [
+            'checkedAt' => $php['checked_at'] ?? null,
+            'fromCache' => (bool) ($php['from_cache'] ?? false),
+            'scheduleHint' => 'Host PHP binary scan: daily with Dependency Audit when older than 7 days; also on Security Audit Refresh.',
+        ])
     </header>
 
     @if ($runtime['status'] === 'ok')
         <div class="fi-pp-php2shell__runtime fi-pp-php2shell__runtime--ok">
             <p>Runtime PHP is up to date: <span class="fi-pp-mono">{{ $runtime['version'] }}</span></p>
             <p>{{ $runtime['label'] }}</p>
-            @if (! empty($runtime['build_date']))
+            @if (filled($runtime['build_date'] ?? null))
                 <p>Build date: <span class="fi-pp-mono">{{ $runtime['build_date'] }}</span></p>
             @endif
         </div>
@@ -33,7 +40,7 @@
         <div class="fi-pp-php2shell__runtime fi-pp-php2shell__runtime--warn">
             <p>Possible security problem: <span class="fi-pp-mono">{{ $runtime['version'] }}</span></p>
             <p>{{ $runtime['label'] }}</p>
-            @if (! empty($runtime['build_date']))
+            @if (filled($runtime['build_date'] ?? null))
                 <p>Build date: <span class="fi-pp-mono">{{ $runtime['build_date'] }}</span></p>
             @endif
             @if (! empty($runtime['minimum_secure']))
@@ -45,7 +52,7 @@
         <div class="fi-pp-php2shell__runtime fi-pp-php2shell__runtime--danger">
             <p>Runtime PHP is outdated: <span class="fi-pp-mono">{{ $runtime['version'] }}</span></p>
             <p>{{ $runtime['label'] }}</p>
-            @if (! empty($runtime['build_date']))
+            @if (filled($runtime['build_date'] ?? null))
                 <p>Build date: <span class="fi-pp-mono">{{ $runtime['build_date'] }}</span></p>
             @endif
             @if (! empty($runtime['minimum_secure']))
@@ -65,7 +72,7 @@
                         —
                         <span class="fi-pp-mono">{{ $binary['version'] }}</span>
                         ({{ $binary['label'] }})
-                        @if (! empty($binary['build_date']))
+                        @if (filled($binary['build_date'] ?? null))
                             · Build
                             <span class="fi-pp-mono">{{ $binary['build_date'] }}</span>
                         @endif

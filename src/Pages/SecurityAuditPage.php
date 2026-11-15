@@ -187,7 +187,11 @@ class SecurityAuditPage extends Page
 
         $composer->forgetCache();
         $npm->forgetCache();
+        PhpRuntimeStatus::forgetCache();
         $composer->clearRefreshRunning();
+
+        // Host PHP scan is local/fast — refresh immediately; Composer/NPM stay background.
+        PhpRuntimeStatus::refresh();
 
         $this->audit = $composer->placeholderPayload();
         $this->npmAudit = $npm->placeholderPayload();
@@ -196,8 +200,8 @@ class SecurityAuditPage extends Page
         $composer->dispatchBackgroundRefresh(force: true);
 
         $body = $npm->isRunnable()
-            ? 'Composer and NPM security checks started in the background. This can take 1–2 minutes.'
-            : 'Composer security check started in the background. This can take 1–2 minutes.';
+            ? 'PHP2SHELL rescanned. Composer and NPM security checks started in the background. This can take 1–2 minutes.'
+            : 'PHP2SHELL rescanned. Composer security check started in the background. This can take 1–2 minutes.';
 
         Notification::make()
             ->title('Security audit refresh started')

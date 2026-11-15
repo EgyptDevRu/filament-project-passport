@@ -6,6 +6,7 @@ use EgyptDevRu\FilamentProjectPassport\Services\LicenseApiClient;
 use EgyptDevRu\FilamentProjectPassport\Services\NpmDependencyAuditor;
 use EgyptDevRu\FilamentProjectPassport\Support\NpmRuntime;
 use EgyptDevRu\FilamentProjectPassport\Support\PageAuthorizer;
+use EgyptDevRu\FilamentProjectPassport\Support\PhpRuntimeStatus;
 use EgyptDevRu\FilamentProjectPassport\Support\SignedCachePayload;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -13,6 +14,7 @@ use Illuminate\Support\Facades\Http;
 afterEach(function () {
     NpmRuntime::fake(null);
     Cache::forget('filament-project-passport.security-audit.manual-refresh');
+    PhpRuntimeStatus::forgetCache();
 });
 
 it('uses the same page authorizer as other developer support pages', function () {
@@ -66,13 +68,44 @@ it('hydrates security audit counts from dependency cache without scanning', func
 });
 
 it('exposes php2shell runtime status on the security audit page', function () {
+    PhpRuntimeStatus::forgetCache();
+
     $page = app(SecurityAuditPage::class);
     $status = $page->phpRuntimeStatus();
 
-    expect($status)->toHaveKeys(['runtime', 'binaries', 'is_secure', 'has_critical', 'has_suspect', 'cloudflare_note'])
+    expect($status)->toHaveKeys(['runtime', 'binaries', 'is_secure', 'has_critical', 'has_suspect', 'checked_at', 'from_cache', 'cloudflare_note'])
         ->and($status['runtime']['version'])->toBe(PHP_VERSION)
         ->and($status['runtime'])->toHaveKeys(['build_date', 'build_after_security_release', 'minimum_secure'])
+        ->and($status['from_cache'])->toBeFalse()
+        ->and($status['checked_at'])->not->toBeNull()
         ->and($status['cloudflare_note'])->toContain('Cloudflare');
+
+    $cached = $page->phpRuntimeStatus();
+
+    expect($cached['from_cache'])->toBeTrue()
+        ->and($cached['checked_at'])->toBe($status['checked_at']);
+});
+
+it('rescans php2shell when security audit refresh runs', function () {
+    PhpRuntimeStatus::forgetCache();
+    PhpRuntimeStatus::report();
+    expect(PhpRuntimeStatus::report()['from_cache'])->toBeTrue();
+
+    $composer = app(ComposerDependencyAuditor::class);
+    $composer->forgetCache();
+    $composer->clearRefreshRunning();
+
+    $page = app(SecurityAuditPage::class);
+    $page->mount();
+
+    expect($page->canManualRefresh())->toBeTrue();
+
+    $page->refreshSecurityAudit();
+
+    expect($page->canManualRefresh())->toBeFalse()
+        ->and(PhpRuntimeStatus::shouldRefresh())->toBeFalse()
+        ->and(PhpRuntimeStatus::report()['from_cache'])->toBeTrue()
+        ->and(PhpRuntimeStatus::report()['checked_at'])->not->toBeNull();
 });
 
 it('registers security audit in the package page list and shield exclusions', function () {

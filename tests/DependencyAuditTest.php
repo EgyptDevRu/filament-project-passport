@@ -750,6 +750,41 @@ it('escalates when high advisories remain after a successful check older than se
         ->and($page->shouldEscalateHighAdvisories())->toBeTrue();
 });
 
+it('discovers flyenv versioned php.exe folders on windows when present', function () {
+    if (DIRECTORY_SEPARATOR !== '\\') {
+        expect(true)->toBeTrue();
+
+        return;
+    }
+
+    $flyenv84 = 'C:\\Program Files\\FlyEnv-Data\\app\\php-8.4.22\\php.exe';
+    $flyenv85 = 'C:\\Program Files\\FlyEnv-Data\\app\\php-8.5.7\\php.exe';
+
+    if (! is_file($flyenv84) || ! is_file($flyenv85)) {
+        expect(true)->toBeTrue();
+
+        return;
+    }
+
+    $paths = array_map(
+        fn (array $row): string => strtolower(str_replace('\\', '/', (string) (realpath($row['path']) ?: $row['path']))),
+        PhpRuntimeStatus::report()['binaries']
+    );
+
+    $runtime = strtolower(str_replace('\\', '/', (string) (realpath(PHP_BINARY) ?: PHP_BINARY)));
+    $normalized84 = strtolower(str_replace('\\', '/', (string) realpath($flyenv84)));
+    $normalized85 = strtolower(str_replace('\\', '/', (string) realpath($flyenv85)));
+
+    // Runtime binary is excluded from "other" (realpath-deduped). Sibling FlyEnv versions must appear.
+    if ($runtime !== $normalized84) {
+        expect($paths)->toContain($normalized84);
+    }
+
+    if ($runtime !== $normalized85) {
+        expect($paths)->toContain($normalized85);
+    }
+});
+
 it('classifies php runtime versions for the php2shell widget', function () {
     expect(PhpRuntimeStatus::classifyVersion('7.4.33')['status'])->toBe('critical')
         ->and(PhpRuntimeStatus::classifyVersion('5.6.40')['status'])->toBe('critical')
@@ -774,6 +809,7 @@ it('marks below-minimum php builds after the security release as suspect', funct
     $after = PhpRuntimeStatus::classifyVersion('8.5.7', 'Oct 21 2026 15:00:00');
     $secureAfter = PhpRuntimeStatus::classifyVersion('8.5.12', 'Oct 22 2026 10:00:00');
     $cutoffExact = PhpRuntimeStatus::classifyVersion('8.5.7', 'Oct 21 2026 14:00:00');
+    $missingBuild = PhpRuntimeStatus::classifyVersion('8.4.22', null);
 
     expect($before['status'])->toBe('outdated')
         ->and($before['build_after_security_release'])->toBeFalse()
@@ -783,6 +819,7 @@ it('marks below-minimum php builds after the security release as suspect', funct
         ->and($after['build_date'])->toContain('2026-10-21')
         ->and($cutoffExact['status'])->toBe('suspect')
         ->and($secureAfter['status'])->toBe('ok')
+        ->and($missingBuild['build_date'])->toBeNull()
         ->and(PhpRuntimeStatus::parseBuildDate('Oct 21 2026 14:00:00')?->format('Y-m-d H:i'))->toBe('2026-10-21 14:00');
 });
 

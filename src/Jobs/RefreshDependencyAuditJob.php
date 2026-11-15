@@ -4,6 +4,7 @@ namespace EgyptDevRu\FilamentProjectPassport\Jobs;
 
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerDependencyAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\NpmDependencyAuditor;
+use EgyptDevRu\FilamentProjectPassport\Support\PhpRuntimeStatus;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -45,6 +46,10 @@ class RefreshDependencyAuditJob implements ShouldQueue
         }
 
         try {
+            if ($this->force || PhpRuntimeStatus::shouldRefresh()) {
+                PhpRuntimeStatus::refresh();
+            }
+
             if ($this->force) {
                 $composer->refresh();
             } else {
