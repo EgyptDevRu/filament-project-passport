@@ -5,6 +5,8 @@ namespace EgyptDevRu\FilamentProjectPassport\Pages;
 use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\InteractsWithPassportNavigation;
 use EgyptDevRu\FilamentProjectPassport\Pages\Concerns\ReleasesSessionEarly;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerDependencyAuditor;
+use EgyptDevRu\FilamentProjectPassport\Services\LicenseApiClient;
+use EgyptDevRu\FilamentProjectPassport\Services\NpmDependencyAuditor;
 use EgyptDevRu\FilamentProjectPassport\Support\CheckAge;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -24,6 +26,12 @@ class DependencyAuditPage extends Page
     public array $audit = [];
 
     /**
+     * @var array<string, mixed>
+     */
+    #[Locked]
+    public array $npmAudit = [];
+
+    /**
      * True while a background Composer audit is in progress.
      * The page always renders immediately (empty/placeholder or cache).
      */
@@ -37,6 +45,8 @@ class DependencyAuditPage extends Page
 
     public string $search = '';
 
+    public string $npmSearch = '';
+
     /**
      * Only ever set via sortBy().
      */
@@ -45,6 +55,12 @@ class DependencyAuditPage extends Page
 
     #[Locked]
     public string $sortDirection = 'asc';
+
+    #[Locked]
+    public string $npmSortColumn = 'name';
+
+    #[Locked]
+    public string $npmSortDirection = 'asc';
 
     public function getView(): string
     {
@@ -68,7 +84,7 @@ class DependencyAuditPage extends Page
 
     protected static function passportDefaultSort(): int
     {
-        return 4;
+        return 5;
     }
 
     /**
@@ -108,7 +124,8 @@ class DependencyAuditPage extends Page
     }
 
     /**
-     * Front-end 3-minute guard: queue unavailable / stuck worker / broken parent install.
+     * Front-end guard when the background lock has cleared but results are still missing.
+     * Does nothing while the refresh lock is held (Composer + NPM can exceed a few minutes).
      */
     public function failScanTimeout(): void
     {
@@ -118,38 +135,74 @@ class DependencyAuditPage extends Page
             return;
         }
 
-        $completed = app(ComposerDependencyAuditor::class)->completedPayload();
+        $composer = app(ComposerDependencyAuditor::class);
+        $npm = app(NpmDependencyAuditor::class);
 
-        if ($completed !== null) {
-            $this->audit = $completed;
+        // Worker still running — keep polling; do not poison the NPM cache early.
+        if ($composer->isRefreshRunning()) {
+            return;
+        }
+
+        $composerCompleted = $composer->completedPayload();
+        $npmCompleted = $npm->completedPayload();
+        $npmReady = ! $npm->needsBackgroundScan();
+
+        if ($composerCompleted !== null && $npmReady) {
+            $this->audit = $composerCompleted;
+            $this->npmAudit = $npmCompleted ?? $npm->placeholderPayload();
             $this->scanning = false;
 
             return;
         }
 
-        $this->audit = app(ComposerDependencyAuditor::class)->rememberFailure(
-            'Dependency audit is still updating after 3 minutes. Check that a queue worker is running for this application (php artisan queue:work), or set dependency_audit.use_queue to false in the Passport config. This usually means the parent installation is not processing background jobs.'
-        );
+        if ($composerCompleted !== null) {
+            $this->audit = $composerCompleted;
+        }
+
+        if ($npmCompleted !== null) {
+            $this->npmAudit = $npmCompleted;
+        }
+
+        if ($composerCompleted === null) {
+            $this->audit = $composer->rememberFailure(
+                'Dependency audit did not finish. Check that a queue worker is running for this application (php artisan queue:work), or set dependency_audit.use_queue to false in the Passport config. This usually means the parent installation is not processing background jobs.'
+            );
+        }
+
+        if ($npm->needsBackgroundScan()) {
+            $this->npmAudit = $npm->rememberFailure(
+                'NPM dependency audit did not finish. Check that a queue worker can run `npm` for this application.'
+            );
+        }
+
         $this->scanning = false;
     }
 
     /**
-     * Bust cache and re-run composer outdated/audit in the background.
+     * Bust cache and re-run composer/npm outdated/audit in the background.
      */
     public function refreshDependencyAudit(): void
     {
-        $auditor = app(ComposerDependencyAuditor::class);
-        $auditor->forgetCache();
-        $auditor->clearRefreshRunning();
+        $composer = app(ComposerDependencyAuditor::class);
+        $npm = app(NpmDependencyAuditor::class);
 
-        $this->audit = $auditor->placeholderPayload();
+        $composer->forgetCache();
+        $npm->forgetCache();
+        $composer->clearRefreshRunning();
+
+        $this->audit = $composer->placeholderPayload();
+        $this->npmAudit = $npm->placeholderPayload();
         $this->scanning = true;
         $this->refreshRequested = true;
-        $auditor->dispatchBackgroundRefresh(force: true);
+        $composer->dispatchBackgroundRefresh(force: true);
+
+        $body = $npm->isRunnable()
+            ? 'Composer and NPM are re-checking outdated packages and advisories in the background. This can take 1–2 minutes.'
+            : 'Composer is re-checking outdated packages and advisories in the background. This can take 1–2 minutes.';
 
         Notification::make()
             ->title('Dependency audit started')
-            ->body('Composer is re-checking outdated packages and advisories in the background. This can take 1–2 minutes.')
+            ->body($body)
             ->success()
             ->send();
     }
@@ -162,22 +215,33 @@ class DependencyAuditPage extends Page
         // Let reload / other tabs proceed while we only peek cache + maybe spawn work.
         $this->releaseSessionLockEarly();
 
-        $auditor = app(ComposerDependencyAuditor::class);
+        $composer = app(ComposerDependencyAuditor::class);
+        $npm = app(NpmDependencyAuditor::class);
 
-        $completed = $auditor->completedPayload();
+        $composerCompleted = $composer->completedPayload();
+        $npmCompleted = $npm->completedPayload();
 
-        if ($completed !== null) {
-            $this->audit = $completed;
+        if ($composerCompleted !== null) {
+            $this->audit = $composerCompleted;
+        } elseif ($this->audit === [] || ! array_key_exists('outdated', $this->audit)) {
+            $this->audit = $composer->placeholderPayload();
+        }
+
+        $this->npmAudit = $npmCompleted ?? $npm->placeholderPayload();
+
+        // Composer can be warm while NPM is still cold (e.g. after NPM support was added).
+        // Treat the page as incomplete until both ecosystems that apply have a result.
+        // When Node.js/npm is missing, NPM is skipped and does not block completion.
+        $composerReady = $composerCompleted !== null;
+        $npmReady = ! $npm->needsBackgroundScan();
+
+        if ($composerReady && $npmReady) {
             $this->scanning = false;
 
             return;
         }
 
-        if ($this->audit === [] || ! array_key_exists('outdated', $this->audit)) {
-            $this->audit = $auditor->placeholderPayload();
-        }
-
-        if ($auditor->isRefreshRunning()) {
+        if ($composer->isRefreshRunning()) {
             $this->scanning = true;
 
             return;
@@ -186,7 +250,7 @@ class DependencyAuditPage extends Page
         if ($requestRefresh) {
             $this->refreshRequested = true;
             // No-op if a refresh is already running (other tab / previous visit).
-            $auditor->dispatchBackgroundRefresh(force: true);
+            $composer->dispatchBackgroundRefresh(force: true);
             $this->scanning = true;
 
             return;
@@ -194,9 +258,18 @@ class DependencyAuditPage extends Page
 
         // Poll: worker finished (or crashed) without writing a result — leave loading state.
         if ($this->refreshRequested) {
-            $this->audit = $auditor->rememberFailure(
-                'Dependency audit did not complete. The background worker may have timed out or failed.'
-            );
+            if (! $composerReady) {
+                $this->audit = $composer->rememberFailure(
+                    'Dependency audit did not complete. The background worker may have timed out or failed.'
+                );
+            }
+
+            if ($npm->needsBackgroundScan()) {
+                $this->npmAudit = $npm->rememberFailure(
+                    'NPM dependency audit did not complete. The background worker may have timed out or failed.'
+                );
+            }
+
             $this->scanning = false;
 
             return;
@@ -205,9 +278,38 @@ class DependencyAuditPage extends Page
         $this->scanning = true;
     }
 
+    /**
+     * Show NPM outdated/advisory tables and stat tiles (requires Node.js + package manifest).
+     * Blade/Alpine hosts without package.json stay on Composer-only UI even if npm exists on PATH.
+     */
+    public function showsNpmDependencyResults(): bool
+    {
+        if (! app(NpmDependencyAuditor::class)->isRunnable()) {
+            return false;
+        }
+
+        return ! (bool) ($this->npmAudit['skipped'] ?? false);
+    }
+
+    /**
+     * Node.js / npm CLI missing — hide NPM result blocks and show the unavailable notice.
+     * Not shown when the host simply has no package.json (no frontend NPM project).
+     */
+    public function showsNpmNodeUnavailableNotice(): bool
+    {
+        return ! app(NpmDependencyAuditor::class)->nodeIsAvailable();
+    }
+
     public function lastCheckSummary(): string
     {
         $checkedAt = $this->audit['checked_at'] ?? null;
+
+        return 'Last check: '.CheckAge::label(is_string($checkedAt) ? $checkedAt : null);
+    }
+
+    public function npmLastCheckSummary(): string
+    {
+        $checkedAt = $this->npmAudit['checked_at'] ?? null;
 
         return 'Last check: '.CheckAge::label(is_string($checkedAt) ? $checkedAt : null);
     }
@@ -220,6 +322,76 @@ class DependencyAuditPage extends Page
     public function advisoryCount(): int
     {
         return (int) ($this->audit['advisory_count'] ?? 0);
+    }
+
+    public function highAdvisoryCount(): int
+    {
+        return (int) ($this->audit['high_advisory_count'] ?? 0);
+    }
+
+    public function npmOutdatedCount(): int
+    {
+        return (int) ($this->npmAudit['outdated_count'] ?? 0);
+    }
+
+    public function npmAdvisoryCount(): int
+    {
+        return (int) ($this->npmAudit['advisory_count'] ?? 0);
+    }
+
+    public function npmHighAdvisoryCount(): int
+    {
+        return (int) ($this->npmAudit['high_advisory_count'] ?? 0);
+    }
+
+    public function totalHighAdvisoryCount(): int
+    {
+        return $this->highAdvisoryCount() + $this->npmHighAdvisoryCount();
+    }
+
+    /**
+     * High/critical advisories are still present after a successful check that is at least 7 days old.
+     */
+    public function shouldEscalateHighAdvisories(): bool
+    {
+        return $this->auditHasStaleHighAdvisories($this->audit, $this->highAdvisoryCount())
+            || $this->auditHasStaleHighAdvisories($this->npmAudit, $this->npmHighAdvisoryCount());
+    }
+
+    /**
+     * @param  array<string, mixed>  $audit
+     */
+    private function auditHasStaleHighAdvisories(array $audit, int $highCount): bool
+    {
+        if ($highCount < 1) {
+            return false;
+        }
+
+        $checkedAt = $audit['checked_at'] ?? null;
+
+        if (! is_string($checkedAt) || $checkedAt === '' || filled($audit['error'] ?? null)) {
+            return false;
+        }
+
+        try {
+            return \Illuminate\Support\Carbon::parse($checkedAt)->diffInDays(now()) >= ComposerDependencyAuditor::CACHE_FRESH_DAYS;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @return array{email: ?string, phone: ?string, developer_name: ?string}
+     */
+    public function studioContact(): array
+    {
+        $license = app(LicenseApiClient::class)->cachedPayload() ?? [];
+
+        return [
+            'email' => isset($license['email']) && is_string($license['email']) ? $license['email'] : null,
+            'phone' => isset($license['phone']) && is_string($license['phone']) ? $license['phone'] : null,
+            'developer_name' => isset($license['developer_name']) && is_string($license['developer_name']) ? $license['developer_name'] : null,
+        ];
     }
 
     /**
@@ -266,36 +438,46 @@ class DependencyAuditPage extends Page
         $this->sortDirection = 'asc';
     }
 
+    public function sortNpmBy(string $column): void
+    {
+        if (! in_array($column, ['name', 'version', 'latest', 'status'], true)) {
+            return;
+        }
+
+        if ($this->npmSortColumn === $column) {
+            $this->npmSortDirection = $this->npmSortDirection === 'asc' ? 'desc' : 'asc';
+
+            return;
+        }
+
+        $this->npmSortColumn = $column;
+        $this->npmSortDirection = 'asc';
+    }
+
     /**
      * @return list<array<string, mixed>>
      */
     public function getFilteredOutdatedProperty(): array
     {
-        /** @var list<array<string, mixed>> $rows */
-        $rows = array_values($this->audit['outdated'] ?? []);
-        $search = trim(mb_strtolower($this->search));
+        return $this->filterOutdatedRows(
+            array_values($this->audit['outdated'] ?? []),
+            $this->search,
+            $this->sortColumn,
+            $this->sortDirection,
+        );
+    }
 
-        if ($search !== '') {
-            $rows = array_values(array_filter(
-                $rows,
-                function (array $row) use ($search): bool {
-                    $haystack = mb_strtolower(
-                        ($row['name'] ?? '').' '.($row['version'] ?? '').' '.($row['latest'] ?? '').' '.($row['status'] ?? '')
-                    );
-
-                    return str_contains($haystack, $search);
-                }
-            ));
-        }
-
-        $column = $this->sortColumn;
-        $direction = $this->sortDirection === 'desc' ? -1 : 1;
-
-        usort($rows, function (array $a, array $b) use ($column, $direction): int {
-            return $direction * strcasecmp((string) ($a[$column] ?? ''), (string) ($b[$column] ?? ''));
-        });
-
-        return $rows;
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getFilteredNpmOutdatedProperty(): array
+    {
+        return $this->filterOutdatedRows(
+            array_values($this->npmAudit['outdated'] ?? []),
+            $this->npmSearch,
+            $this->npmSortColumn,
+            $this->npmSortDirection,
+        );
     }
 
     /**
@@ -307,8 +489,50 @@ class DependencyAuditPage extends Page
         return array_values($this->audit['advisories'] ?? []);
     }
 
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getNpmAdvisoriesProperty(): array
+    {
+        /** @var list<array<string, mixed>> */
+        return array_values($this->npmAudit['advisories'] ?? []);
+    }
+
     public function hasIssues(): bool
     {
-        return $this->outdatedCount() > 0 || $this->advisoryCount() > 0;
+        return $this->outdatedCount() > 0
+            || $this->advisoryCount() > 0
+            || $this->npmOutdatedCount() > 0
+            || $this->npmAdvisoryCount() > 0;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @return list<array<string, mixed>>
+     */
+    private function filterOutdatedRows(array $rows, string $search, string $sortColumn, string $sortDirection): array
+    {
+        $needle = trim(mb_strtolower($search));
+
+        if ($needle !== '') {
+            $rows = array_values(array_filter(
+                $rows,
+                function (array $row) use ($needle): bool {
+                    $haystack = mb_strtolower(
+                        ($row['name'] ?? '').' '.($row['version'] ?? '').' '.($row['latest'] ?? '').' '.($row['status'] ?? '')
+                    );
+
+                    return str_contains($haystack, $needle);
+                }
+            ));
+        }
+
+        $direction = $sortDirection === 'desc' ? -1 : 1;
+
+        usort($rows, function (array $a, array $b) use ($sortColumn, $direction): int {
+            return $direction * strcasecmp((string) ($a[$sortColumn] ?? ''), (string) ($b[$sortColumn] ?? ''));
+        });
+
+        return $rows;
     }
 }

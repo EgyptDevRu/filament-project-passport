@@ -7,6 +7,7 @@ use EgyptDevRu\FilamentProjectPassport\Pages\DependencyAuditPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\DocumentationPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\LicenseAuditPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\OpenSourceLicensesPage;
+use EgyptDevRu\FilamentProjectPassport\Pages\SecurityAuditPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\StatusPage;
 use Throwable;
 
@@ -27,6 +28,7 @@ final class ShieldIntegration
         StatusPage::class,
         DocumentationPage::class,
         LicenseAuditPage::class,
+        SecurityAuditPage::class,
         DependencyAuditPage::class,
         OpenSourceLicensesPage::class,
     ];

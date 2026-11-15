@@ -50,7 +50,7 @@ it('requires open source licenses refresh when cache is older than fourteen days
     $auditor = app(ComposerOpenSourceLicensesAuditor::class);
     $auditor->forgetCache();
 
-    Cache::put($auditor->cacheKey(), [
+    passportPutSignedCache($auditor->cacheKey(), [
         'packages' => [],
         'checked_at' => now()->subDays(14)->toIso8601String(),
     ], 86400);

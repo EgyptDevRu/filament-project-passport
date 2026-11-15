@@ -9,12 +9,14 @@ use EgyptDevRu\FilamentProjectPassport\Pages\DependencyAuditPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\DocumentationPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\LicenseAuditPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\OpenSourceLicensesPage;
+use EgyptDevRu\FilamentProjectPassport\Pages\SecurityAuditPage;
 use EgyptDevRu\FilamentProjectPassport\Pages\StatusPage;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerDependencyAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerLicenseAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\ComposerOpenSourceLicensesAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\DocumentationScanner;
 use EgyptDevRu\FilamentProjectPassport\Services\LicenseApiClient;
+use EgyptDevRu\FilamentProjectPassport\Services\NpmDependencyAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\NpmLicenseAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\NpmOpenSourceLicensesAuditor;
 use EgyptDevRu\FilamentProjectPassport\Services\ThirdPartyLicensesWriter;
@@ -42,6 +44,7 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
         StatusPage::class,
         DocumentationPage::class,
         LicenseAuditPage::class,
+        SecurityAuditPage::class,
         DependencyAuditPage::class,
         OpenSourceLicensesPage::class,
     ];
@@ -70,6 +73,7 @@ class FilamentProjectPassportServiceProvider extends PackageServiceProvider
         $this->app->singleton(NpmOpenSourceLicensesAuditor::class);
         $this->app->singleton(ThirdPartyLicensesWriter::class);
         $this->app->singleton(ComposerDependencyAuditor::class);
+        $this->app->singleton(NpmDependencyAuditor::class);
 
         if (class_exists(Panel::class)) {
             Panel::configureUsing(function (Panel $panel): void {

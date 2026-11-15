@@ -1729,9 +1729,245 @@ main.fi-main:has(.fi-pp) {
 
 @media (min-width: 768px) {
     .fi-pp-dependency-audit__stats,
+    .fi-pp-dependency-audit__stats--composer-only,
     .fi-pp-dependency-audit__frameworks {
         grid-template-columns: 1fr 1fr;
     }
+}
+
+@media (min-width: 1280px) {
+    .fi-pp-dependency-audit__stats--with-npm {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+.fi-pp-license-summary--warn {
+    outline-color: rgb(217 119 6 / 0.35);
+    background: #fffbeb;
+}
+
+.dark .fi-pp-license-summary--warn,
+:is(.dark) .fi-pp-license-summary--warn {
+    background: rgb(69 26 3 / 0.35);
+}
+
+.fi-pp-license-summary--warn .fi-pp-license-summary__icon {
+    color: #b45309;
+}
+
+.dark .fi-pp-license-summary--warn .fi-pp-license-summary__icon,
+:is(.dark) .fi-pp-license-summary--warn .fi-pp-license-summary__icon {
+    color: #fbbf24;
+}
+
+.fi-pp-license-summary--warn .fi-pp-license-summary__title {
+    color: #92400e;
+}
+
+.dark .fi-pp-license-summary--warn .fi-pp-license-summary__title,
+:is(.dark) .fi-pp-license-summary--warn .fi-pp-license-summary__title {
+    color: #fcd34d;
+}
+
+.fi-pp-license-summary--warn .fi-pp-license-summary__text {
+    color: #78350f;
+}
+
+.dark .fi-pp-license-summary--warn .fi-pp-license-summary__text,
+:is(.dark) .fi-pp-license-summary--warn .fi-pp-license-summary__text {
+    color: #fde68a;
+}
+
+.fi-pp-security-audit {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.fi-pp-security-audit__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.fi-pp-security-audit__header-main {
+    flex: 1 1 16rem;
+    min-width: 0;
+}
+
+.fi-pp-security-audit__header-actions {
+    flex: 0 0 auto;
+}
+
+.fi-pp-security-audit__link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.fi-pp-security-audit__link:hover {
+    transform: translateY(-1px);
+}
+
+.fi-pp-security-audit__cta {
+    margin: 0.65rem 0 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--primary-600, #d97706);
+}
+
+.dark .fi-pp-security-audit__cta,
+:is(.dark) .fi-pp-security-audit__cta {
+    color: var(--primary-400, #fbbf24);
+}
+
+.fi-pp-php2shell--ok {
+    outline-color: rgb(22 163 74 / 0.3);
+    background: #f0fdf4;
+}
+
+.dark .fi-pp-php2shell--ok,
+:is(.dark) .fi-pp-php2shell--ok {
+    background: rgb(20 83 45 / 0.3);
+}
+
+.fi-pp-php2shell--danger {
+    outline-color: rgb(220 38 38 / 0.35);
+    background: #fef2f2;
+}
+
+.dark .fi-pp-php2shell--danger,
+:is(.dark) .fi-pp-php2shell--danger {
+    background: rgb(69 10 10 / 0.35);
+}
+
+.fi-pp-php2shell--warn {
+    outline-color: rgb(217 119 6 / 0.35);
+    background: #fffbeb;
+}
+
+.dark .fi-pp-php2shell--warn,
+:is(.dark) .fi-pp-php2shell--warn {
+    background: rgb(69 26 3 / 0.35);
+}
+
+.fi-pp-php2shell__runtime {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0 0 0.85rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.45;
+}
+
+.fi-pp-php2shell__runtime > p {
+    margin: 0;
+}
+
+.fi-pp-php2shell__runtime--ok {
+    color: #166534;
+}
+
+.dark .fi-pp-php2shell__runtime--ok,
+:is(.dark) .fi-pp-php2shell__runtime--ok {
+    color: #86efac;
+}
+
+.fi-pp-php2shell__runtime--danger {
+    color: #b91c1c;
+}
+
+.dark .fi-pp-php2shell__runtime--danger,
+:is(.dark) .fi-pp-php2shell__runtime--danger {
+    color: #fca5a5;
+}
+
+.fi-pp-php2shell__runtime--warn {
+    color: #b45309;
+}
+
+.dark .fi-pp-php2shell__runtime--warn,
+:is(.dark) .fi-pp-php2shell__runtime--warn {
+    color: #fbbf24;
+}
+
+.fi-pp-php2shell__alert {
+    margin: 0 0 0.75rem;
+    color: #b91c1c;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+.dark .fi-pp-php2shell__alert,
+:is(.dark) .fi-pp-php2shell__alert {
+    color: #fca5a5;
+}
+
+.fi-pp-php2shell__alert--warn {
+    color: #b45309;
+}
+
+.dark .fi-pp-php2shell__alert--warn,
+:is(.dark) .fi-pp-php2shell__alert--warn {
+    color: #fbbf24;
+}
+
+.fi-pp-php2shell__binaries {
+    margin: 0.75rem 0;
+}
+
+.fi-pp-php2shell__list {
+    margin: 0.35rem 0 0;
+    padding-left: 1.15rem;
+    list-style: disc;
+}
+
+.fi-pp-php2shell__item {
+    margin: 0.25rem 0;
+    font-size: 0.875rem;
+    color: #374151;
+}
+
+.dark .fi-pp-php2shell__item,
+:is(.dark) .fi-pp-php2shell__item {
+    color: #d1d5db;
+}
+
+.fi-pp-php2shell__item--critical,
+.fi-pp-php2shell__item--outdated {
+    color: #b91c1c;
+    font-weight: 600;
+}
+
+.dark .fi-pp-php2shell__item--critical,
+.dark .fi-pp-php2shell__item--outdated,
+:is(.dark) .fi-pp-php2shell__item--critical,
+:is(.dark) .fi-pp-php2shell__item--outdated {
+    color: #fca5a5;
+}
+
+.fi-pp-php2shell__item--suspect {
+    color: #b45309;
+    font-weight: 600;
+}
+
+.dark .fi-pp-php2shell__item--suspect,
+:is(.dark) .fi-pp-php2shell__item--suspect {
+    color: #fbbf24;
+}
+
+.fi-pp-php2shell__item--ok {
+    color: #166534;
+}
+
+.dark .fi-pp-php2shell__item--ok,
+:is(.dark) .fi-pp-php2shell__item--ok {
+    color: #86efac;
 }
 
 .fi-pp-dependency-stat__value {

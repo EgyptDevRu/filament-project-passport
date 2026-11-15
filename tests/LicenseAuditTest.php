@@ -137,7 +137,7 @@ it('requires license audit refresh when cache is older than fourteen days', func
     $auditor = app(ComposerLicenseAuditor::class);
     $auditor->forgetCache();
 
-    Cache::put($auditor->cacheKey(), [
+    passportPutSignedCache($auditor->cacheKey(), [
         'packages' => [],
         'checked_at' => now()->subDays(14)->toIso8601String(),
     ], 86400);

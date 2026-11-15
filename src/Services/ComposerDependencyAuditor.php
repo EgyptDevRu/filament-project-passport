@@ -5,6 +5,7 @@ namespace EgyptDevRu\FilamentProjectPassport\Services;
 use Composer\InstalledVersions;
 use EgyptDevRu\FilamentProjectPassport\Jobs\RefreshDependencyAuditJob;
 use EgyptDevRu\FilamentProjectPassport\Support\ComposerBinary;
+use EgyptDevRu\FilamentProjectPassport\Support\SignedCachePayload;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Symfony\Component\Process\Process;
@@ -43,7 +44,8 @@ final class ComposerDependencyAuditor
      *     outdated_count: int,
      *     advisory_count: int,
      *     outdated: list<array{name: string, version: string, latest: string, status: string}>,
-     *     advisories: list<array{package: string, title: string, cve: ?string, link: ?string, affected_versions: ?string}>,
+     *     advisories: list<array{package: string, title: string, severity: string, cve: ?string, link: ?string, affected_versions: ?string}>,
+     *     high_advisory_count: int,
      *     laravel: array{installed: ?string, latest: ?string, up_to_date: bool, installed_flag: bool},
      *     filament: array{installed: ?string, latest: ?string, up_to_date: bool, installed_flag: bool},
      *     checked_at: string,
@@ -70,7 +72,7 @@ final class ComposerDependencyAuditor
                 ? self::CACHE_TTL_SECONDS
                 : self::FAILURE_CACHE_TTL_SECONDS;
 
-            Cache::put($cacheKey, $payload, $ttl);
+            Cache::put($cacheKey, SignedCachePayload::seal($payload), $ttl);
 
             return array_merge($payload, ['from_cache' => false]);
         } finally {
@@ -101,10 +103,9 @@ final class ComposerDependencyAuditor
      */
     public function completedPayload(): ?array
     {
-        /** @var array<string, mixed>|null $cached */
-        $cached = Cache::get($this->cacheKey());
+        $cached = SignedCachePayload::open(Cache::get($this->cacheKey()));
 
-        if (! is_array($cached) || ! isset($cached['checked_at'], $cached['outdated'], $cached['advisories'])) {
+        if ($cached === null || ! isset($cached['checked_at'], $cached['outdated'], $cached['advisories'])) {
             return null;
         }
 
@@ -165,9 +166,11 @@ final class ComposerDependencyAuditor
 
     public function markRefreshRunning(): bool
     {
-        // Stay above RefreshDependencyAuditJob::$timeout so the lock cannot
-        // expire (and be re-dispatched) while that job is still finishing.
-        return Cache::add($this->runningLockKey(), true, self::MAX_SCAN_SECONDS + 120);
+        // Stay above RefreshDependencyAuditJob::TIMEOUT_SECONDS so the lock cannot
+        // expire (and be re-dispatched) while Composer + NPM are still finishing.
+        $ttl = self::MAX_SCAN_SECONDS + NpmDependencyAuditor::MAX_SCAN_SECONDS + 180;
+
+        return Cache::add($this->runningLockKey(), true, $ttl);
     }
 
     public function clearRefreshRunning(): void
@@ -184,8 +187,9 @@ final class ComposerDependencyAuditor
     {
         $payload = $this->emptyPayload();
         $payload['error'] = $message;
+        $payload['checked_at'] = now()->toIso8601String();
 
-        Cache::put($this->cacheKey(), $payload, self::FAILURE_CACHE_TTL_SECONDS);
+        Cache::put($this->cacheKey(), SignedCachePayload::seal($payload), self::FAILURE_CACHE_TTL_SECONDS);
         $this->clearRefreshRunning();
 
         return array_merge($payload, ['from_cache' => false]);
@@ -201,6 +205,7 @@ final class ComposerDependencyAuditor
         return [
             'outdated_count' => 0,
             'advisory_count' => 0,
+            'high_advisory_count' => 0,
             'outdated' => [],
             'advisories' => [],
             'laravel' => [
@@ -278,10 +283,9 @@ final class ComposerDependencyAuditor
      */
     public function shouldRefresh(int $days = self::CACHE_FRESH_DAYS): bool
     {
-        /** @var array{checked_at?: mixed, error?: mixed}|null $cached */
-        $cached = Cache::get($this->cacheKey());
+        $cached = SignedCachePayload::open(Cache::get($this->cacheKey()));
 
-        if (! is_array($cached) || ! isset($cached['checked_at']) || ! is_string($cached['checked_at']) || $cached['checked_at'] === '') {
+        if ($cached === null || ! isset($cached['checked_at']) || ! is_string($cached['checked_at']) || $cached['checked_at'] === '') {
             return true;
         }
 
@@ -338,10 +342,27 @@ final class ComposerDependencyAuditor
         $payload['advisories'] = $advisoryRows;
         $payload['outdated_count'] = count($outdatedRows);
         $payload['advisory_count'] = count($advisoryRows);
+        $payload['high_advisory_count'] = $this->highAdvisoryCount($advisoryRows);
         $payload['laravel'] = $this->frameworkStatus(self::LARAVEL_PACKAGE, $outdatedRows);
         $payload['filament'] = $this->frameworkStatus(self::FILAMENT_PACKAGE, $outdatedRows);
 
         return $payload;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $advisories
+     */
+    public function highAdvisoryCount(array $advisories): int
+    {
+        return count(array_filter(
+            $advisories,
+            fn (array $row): bool => $this->isHighSeverity((string) ($row['severity'] ?? ''))
+        ));
+    }
+
+    public function isHighSeverity(string $severity): bool
+    {
+        return in_array(strtolower(trim($severity)), ['critical', 'high'], true);
     }
 
     /**
@@ -490,7 +511,7 @@ final class ComposerDependencyAuditor
 
     /**
      * @param  array<string, mixed>  $payload
-     * @return list<array{package: string, title: string, cve: ?string, link: ?string, affected_versions: ?string}>
+     * @return list<array{package: string, title: string, severity: string, cve: ?string, link: ?string, affected_versions: ?string}>
      */
     public function parseAdvisories(array $payload): array
     {
@@ -512,9 +533,12 @@ final class ComposerDependencyAuditor
                     continue;
                 }
 
+                $severity = strtolower((string) ($item['severity'] ?? 'unknown'));
+
                 $rows[] = [
                     'package' => is_string($packageName) ? $packageName : (string) ($item['packageName'] ?? 'unknown'),
                     'title' => (string) ($item['title'] ?? 'Security advisory'),
+                    'severity' => $severity !== '' ? $severity : 'unknown',
                     'cve' => isset($item['cve']) ? (string) $item['cve'] : null,
                     'link' => $this->safeHttpUrl(
                         isset($item['link']) ? (string) $item['link'] : (isset($item['advisoryUrl']) ? (string) $item['advisoryUrl'] : null)
@@ -605,6 +629,7 @@ final class ComposerDependencyAuditor
      * @return array{
      *     outdated_count: int,
      *     advisory_count: int,
+     *     high_advisory_count: int,
      *     outdated: list<array<string, mixed>>,
      *     advisories: list<array<string, mixed>>,
      *     laravel: array{installed: ?string, latest: ?string, up_to_date: bool, installed_flag: bool},
@@ -619,6 +644,7 @@ final class ComposerDependencyAuditor
         return [
             'outdated_count' => 0,
             'advisory_count' => 0,
+            'high_advisory_count' => 0,
             'outdated' => [],
             'advisories' => [],
             'laravel' => [

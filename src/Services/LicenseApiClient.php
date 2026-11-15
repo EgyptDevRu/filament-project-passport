@@ -4,6 +4,7 @@ namespace EgyptDevRu\FilamentProjectPassport\Services;
 
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseApiGateway;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseErrorCode;
+use EgyptDevRu\FilamentProjectPassport\Support\SignedCachePayload;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -32,6 +33,12 @@ final class LicenseApiClient
      */
     public function fetch(): array
     {
+        // Default APP_NAME ⇒ default cache prefix on shared Redis. Refuse license
+        // until the host sets a unique name (do not read/write Redis for this case).
+        if ($this->usesDefaultAppName()) {
+            return $this->withMeta($this->defaultAppNameBlock(), fromCache: false);
+        }
+
         $host = $this->resolveHost();
         $cacheKey = $this->cacheKey($host);
 
@@ -47,26 +54,38 @@ final class LicenseApiClient
             ? self::FAILURE_CACHE_TTL_SECONDS
             : self::CACHE_TTL_SECONDS;
 
-        Cache::put($cacheKey, $this->cacheablePayload($result), $ttl);
+        Cache::put($cacheKey, SignedCachePayload::seal($this->cacheablePayload($result)), $ttl);
 
         return $this->withMeta($result, fromCache: false);
     }
 
     /**
-     * Cached license payload only — never hits the network. Null when missing.
+     * Cached license payload only — never hits the network. Null when missing, tampered,
+     * or APP_NAME is still the Laravel default.
      *
      * @return array<string, mixed>|null
      */
     public function cachedPayload(?string $host = null): ?array
     {
-        /** @var array<string, mixed>|null $cached */
-        $cached = Cache::get($this->cacheKey($host));
+        if ($this->usesDefaultAppName()) {
+            return null;
+        }
 
-        if (! is_array($cached)) {
+        $cached = SignedCachePayload::open(Cache::get($this->cacheKey($host)));
+
+        if ($cached === null) {
             return null;
         }
 
         return $this->withMeta($cached, fromCache: true);
+    }
+
+    /**
+     * True when APP_NAME is still Laravel's default (shared Redis cache-prefix collision risk).
+     */
+    public function usesDefaultAppName(): bool
+    {
+        return strcasecmp(trim((string) config('app.name', '')), 'Laravel') === 0;
     }
 
     /**
@@ -193,8 +212,24 @@ final class LicenseApiClient
      */
     private function isOfficialPayload(array $payload): bool
     {
+        if ($this->usesDefaultAppName()) {
+            return false;
+        }
+
         return ! LicenseErrorCode::isUndefinedStatus($payload)
             && (bool) ($payload['is_official'] ?? false);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function defaultAppNameBlock(): array
+    {
+        return $this->undefinedFallback(
+            errorCode: LicenseErrorCode::APP_NAME_DEFAULT,
+            error: LicenseErrorCode::description(LicenseErrorCode::APP_NAME_DEFAULT),
+            sentHost: $this->resolveHost(),
+        );
     }
 
     /**
@@ -536,6 +571,7 @@ final class LicenseApiClient
             'response_body' => isset($result['response_body']) ? Str::limit((string) $result['response_body'], 1000) : null,
             'endpoint' => $result['endpoint'] ?? $this->endpoint(),
             'sent_host' => $result['sent_host'] ?? null,
+            'cached_at' => now()->toIso8601String(),
         ];
     }
 
@@ -554,6 +590,7 @@ final class LicenseApiClient
             'response_body' => $payload['response_body'] ?? null,
             'endpoint' => $payload['endpoint'] ?? $this->endpoint(),
             'sent_host' => $payload['sent_host'] ?? null,
+            'cached_at' => $this->nullableString($payload['cached_at'] ?? null),
         ]);
     }
 

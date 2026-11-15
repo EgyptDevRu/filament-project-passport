@@ -8,7 +8,7 @@
             timer: null,
             scanTimer: null,
             pollTimer: null,
-            scanTimeoutMs: 3 * 60 * 1000,
+            scanTimeoutMs: 12 * 60 * 1000,
             armScanTimeout(scanning) {
                 clearTimeout(this.scanTimer)
                 this.scanTimer = null
@@ -106,7 +106,7 @@
         @if ($this->scanning && empty($this->audit['error']))
             @include('filament-project-passport::components.loading-state', [
                 'title' => 'Updating…',
-                'message' => '0 outdated / 0 advisories until the background check finishes. This page reloads the numbers automatically.',
+                'message' => 'Composer and NPM: 0 outdated / 0 advisories until the background check finishes. This page reloads the numbers automatically.',
             ])
         @endif
 

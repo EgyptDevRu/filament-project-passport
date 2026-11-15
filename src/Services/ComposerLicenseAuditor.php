@@ -5,6 +5,7 @@ namespace EgyptDevRu\FilamentProjectPassport\Services;
 use Composer\InstalledVersions;
 use EgyptDevRu\FilamentProjectPassport\Support\ComposerPackageReplaceMap;
 use EgyptDevRu\FilamentProjectPassport\Support\LicenseStatus;
+use EgyptDevRu\FilamentProjectPassport\Support\SignedCachePayload;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
@@ -41,10 +42,9 @@ final class ComposerLicenseAuditor
         $cacheKey = $this->cacheKey();
 
         if (! $fresh) {
-            /** @var array{packages?: mixed, checked_at?: mixed}|null $cached */
-            $cached = Cache::get($cacheKey);
+            $cached = SignedCachePayload::open(Cache::get($cacheKey));
 
-            if (is_array($cached) && isset($cached['packages'], $cached['checked_at']) && is_array($cached['packages'])) {
+            if ($cached !== null && isset($cached['packages'], $cached['checked_at']) && is_array($cached['packages'])) {
                 return [
                     'packages' => array_values($cached['packages']),
                     'checked_at' => (string) $cached['checked_at'],
@@ -56,10 +56,10 @@ final class ComposerLicenseAuditor
         $packages = $this->scanPackages();
         $checkedAt = now()->toIso8601String();
 
-        Cache::put($cacheKey, [
+        Cache::put($cacheKey, SignedCachePayload::seal([
             'packages' => $packages,
             'checked_at' => $checkedAt,
-        ], self::CACHE_TTL_SECONDS);
+        ]), self::CACHE_TTL_SECONDS);
 
         return [
             'packages' => $packages,
@@ -94,10 +94,9 @@ final class ComposerLicenseAuditor
      */
     public function shouldRefresh(int $days = 14): bool
     {
-        /** @var array{checked_at?: mixed}|null $cached */
-        $cached = Cache::get($this->cacheKey());
+        $cached = SignedCachePayload::open(Cache::get($this->cacheKey()));
 
-        if (! is_array($cached) || ! isset($cached['checked_at']) || ! is_string($cached['checked_at']) || $cached['checked_at'] === '') {
+        if ($cached === null || ! isset($cached['checked_at']) || ! is_string($cached['checked_at']) || $cached['checked_at'] === '') {
             return true;
         }
 

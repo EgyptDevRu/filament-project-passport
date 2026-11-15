@@ -38,10 +38,16 @@ return [
                 'sort' => 3,
             ],
 
+            'security_audit' => [
+                'label' => 'Security Audit',
+                'icon' => 'heroicon-o-lock-closed',
+                'sort' => 4,
+            ],
+
             'dependency_audit' => [
                 'label' => 'Dependency Audit',
                 'icon' => 'heroicon-o-cube',
-                'sort' => 4,
+                'sort' => 5,
             ],
 
             /*
@@ -51,7 +57,7 @@ return [
             'open_source_licenses' => [
                 'label' => 'Open Source Licenses',
                 'icon' => 'heroicon-o-document-text',
-                'sort' => 5,
+                'sort' => 6,
             ],
 
         ],
@@ -85,9 +91,9 @@ return [
 
         /*
          * Default true: only admin / super-admin style users can open the
-         * Dependency Audit, License Audit, and Status pages. Set false only
-         * if every authenticated user of this panel should be trusted with
-         * that information — not recommended.
+         * Security Audit, Dependency Audit, License Audit, and Status pages.
+         * Set false only if every authenticated user of this panel should be
+         * trusted with that information — not recommended.
          *
          * Override per environment via .env (not committed):
          * FILAMENT_PROJECT_PASSPORT_RESTRICTED_TO_ADMINS=false

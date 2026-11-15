@@ -234,6 +234,49 @@ it('treats string and integer official flags as boolean true', function () {
     expect(app(LicenseApiClient::class)->fetch()['is_official'])->toBeTrue();
 });
 
+it('invalidates license when APP_NAME is still the Laravel default', function () {
+    Http::fake([
+        'en.egyptdev.ru/*' => Http::response([
+            'is_official' => true,
+            'project_name' => 'Example Project',
+        ], 200),
+    ]);
+
+    config()->set('app.url', 'https://app.test');
+    config()->set('app.name', 'Laravel');
+
+    $client = app(LicenseApiClient::class);
+    $client->forgetCache();
+    $result = $client->fetch();
+
+    expect($client->usesDefaultAppName())->toBeTrue()
+        ->and($result['is_official'])->toBeFalse()
+        ->and($result['request_failed'])->toBeTrue()
+        ->and($result['error_code'])->toBe(LicenseErrorCode::APP_NAME_DEFAULT)
+        ->and($client->isOfficial())->toBeFalse()
+        ->and($client->allowsDocumentation())->toBeFalse();
+
+    Http::assertNothingSent();
+});
+
+it('accepts a unique APP_NAME for an otherwise official license', function () {
+    Http::fake([
+        'en.egyptdev.ru/*' => Http::response([
+            'is_official' => true,
+            'project_name' => 'Example Project',
+        ], 200),
+    ]);
+
+    config()->set('app.url', 'https://app.test');
+    config()->set('app.name', 'RSL CRM');
+
+    $client = app(LicenseApiClient::class);
+    $client->forgetCache();
+
+    expect($client->usesDefaultAppName())->toBeFalse()
+        ->and($client->isOfficial())->toBeTrue();
+});
+
 it('can bust the license cache', function () {
     Http::fake([
         'en.egyptdev.ru/*' => Http::sequence()

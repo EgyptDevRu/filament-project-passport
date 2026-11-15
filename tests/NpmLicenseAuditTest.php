@@ -110,7 +110,19 @@ it('returns an empty npm audit when no package.json exists', function () {
 
     expect($result['packages'])->toBe([])
         ->and($result['from_cache'])->toBeFalse()
-        ->and(NpmPackageInventory::fingerprintPath())->toBeNull();
+        ->and(NpmPackageInventory::fingerprintPath())->toBeNull()
+        ->and(NpmPackageInventory::hasManifest())->toBeFalse()
+        ->and(NpmPackageInventory::records())->toBe([]);
+
+    // After the empty scan is cached, do not keep re-scheduling work for Blade/Alpine hosts.
+    expect($auditor->shouldRefresh(14))->toBeFalse();
+
+    $oss = app(NpmOpenSourceLicensesAuditor::class);
+    $oss->forgetCache();
+    $ossResult = $oss->audit(fresh: true);
+
+    expect($ossResult['packages'])->toBe([])
+        ->and($oss->shouldRefresh(14))->toBeFalse();
 });
 
 it('reads npm licenses from package-lock.json', function () {
@@ -143,7 +155,7 @@ it('caches npm license audit results for fourteen days', function () {
         ->and($second['packages'])->toBe($first['packages'])
         ->and($auditor->shouldRefresh(14))->toBeFalse();
 
-    Cache::put($auditor->cacheKey(), [
+    passportPutSignedCache($auditor->cacheKey(), [
         'packages' => [],
         'checked_at' => now()->subDays(14)->toIso8601String(),
     ], 86400);

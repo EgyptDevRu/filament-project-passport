@@ -41,9 +41,22 @@ final class NpmPackageInventory
             return md5('npm:missing:'.base_path());
         }
 
-        $hash = md5_file($path);
+        try {
+            $hash = md5_file($path);
+        } catch (Throwable) {
+            return md5($path);
+        }
 
         return is_string($hash) ? $hash : md5($path);
+    }
+
+    /**
+     * True when the host app ships package.json and/or package-lock.json.
+     * Blade/Alpine apps without an NPM front-end return false even if Node is installed.
+     */
+    public static function hasManifest(): bool
+    {
+        return self::fingerprintPath() !== null;
     }
 
     /**
@@ -51,13 +64,17 @@ final class NpmPackageInventory
      */
     public static function records(): array
     {
-        $fromLock = self::recordsFromPackageLock();
+        try {
+            $fromLock = self::recordsFromPackageLock();
 
-        if ($fromLock !== []) {
-            return $fromLock;
+            if ($fromLock !== []) {
+                return $fromLock;
+            }
+
+            return self::recordsFromPackageJson();
+        } catch (Throwable) {
+            return [];
         }
-
-        return self::recordsFromPackageJson();
     }
 
     /**

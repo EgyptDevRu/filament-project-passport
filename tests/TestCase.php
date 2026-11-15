@@ -29,5 +29,7 @@ class TestCase extends Orchestra
         config()->set('database.default', 'testing');
         config()->set('cache.default', 'array');
         config()->set('app.url', 'https://app.test');
+        // Unique APP_NAME so default "Laravel" license invalidation does not trip package tests.
+        config()->set('app.name', 'Filament Project Passport Test');
     }
 }

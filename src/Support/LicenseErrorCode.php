@@ -55,6 +55,8 @@ final class LicenseErrorCode
 
     public const string JSON_EMPTY = 'PP-JSON-EMPTY';
 
+    public const string APP_NAME_DEFAULT = 'PP-APP-NAME-DEFAULT';
+
     public const string UNKNOWN = 'PP-UNKNOWN';
 
     /**
@@ -86,6 +88,7 @@ final class LicenseErrorCode
             self::NET_CONNECTION => 'Network connection to the license API failed.',
             self::JSON_INVALID => 'License API response was not valid JSON.',
             self::JSON_EMPTY => 'License API returned empty or non-object JSON.',
+            self::APP_NAME_DEFAULT => 'APP_NAME is still the Laravel default. Set a unique APP_NAME so cache prefixes do not collide on shared Redis.',
             self::UNKNOWN => 'Unexpected license-check failure.',
         ];
     }
