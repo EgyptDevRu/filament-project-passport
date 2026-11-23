@@ -244,6 +244,15 @@ return [
          */
         'use_queue' => env('FILAMENT_PROJECT_PASSPORT_DEPENDENCY_AUDIT_USE_QUEUE', true),
 
+        /*
+         * Optional absolute npm binary override. When unset, Passport probes common
+         * installs automatically (official Linux node-v under /usr/local/lib/nodejs,
+         * nvm, fnm, /usr/local/bin/npm, Windows Program Files nodejs, FlyEnv, etc.).
+         *
+         * FILAMENT_PROJECT_PASSPORT_NPM_BINARY=/usr/local/lib/nodejs/node-v24.6.0/bin/npm
+         */
+        'npm_binary' => env('FILAMENT_PROJECT_PASSPORT_NPM_BINARY'),
+
     ],
 
 ];

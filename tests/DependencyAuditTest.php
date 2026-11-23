@@ -348,6 +348,27 @@ it('stays composer-only when node exists but the host has no package.json', func
         ->and($payload['message'])->toContain('package.json');
 });
 
+it('explains that ssh-visible npm may still be missing from php-fpm path', function () {
+    expect(NpmRuntime::unavailableMessage())->toContain('PHP-FPM/queue PATH')
+        ->and(NpmRuntime::unavailableMessage())->toContain('FILAMENT_PROJECT_PASSPORT_NPM_BINARY');
+});
+
+it('includes absolute and bare npm candidates for discovery', function () {
+    $candidates = NpmRuntime::npmBinaryCandidates();
+    $flat = array_map(fn (array $parts): string => implode(' ', $parts), $candidates);
+
+    expect($candidates)->not->toBeEmpty()
+        ->and($flat)->toContain('npm');
+});
+
+it('prefers configured npm binary when FILAMENT_PROJECT_PASSPORT_NPM_BINARY is set', function () {
+    config()->set('filament-project-passport.dependency_audit.npm_binary', '/usr/local/lib/nodejs/node-v24.6.0/bin/npm');
+
+    $candidates = NpmRuntime::npmBinaryCandidates();
+
+    expect($candidates[0] ?? null)->toBe(['/usr/local/lib/nodejs/node-v24.6.0/bin/npm']);
+});
+
 it('skips npm dependency audit and hides npm blocks when node is unavailable', function () {
     NpmRuntime::fake(false);
     dependencyAuditSeedNpmManifest();

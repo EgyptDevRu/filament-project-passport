@@ -2,7 +2,6 @@
 
 namespace EgyptDevRu\FilamentProjectPassport\Services;
 
-use EgyptDevRu\FilamentProjectPassport\Support\ComposerBinary;
 use EgyptDevRu\FilamentProjectPassport\Support\NpmPackageInventory;
 use EgyptDevRu\FilamentProjectPassport\Support\NpmRuntime;
 use EgyptDevRu\FilamentProjectPassport\Support\SignedCachePayload;
@@ -286,9 +285,15 @@ final class NpmDependencyAuditor
     private function runNpmJson(array $arguments): array
     {
         $failures = [];
-        $env = ComposerBinary::inheritedEnvironment();
+        $env = NpmRuntime::inheritedEnvironment();
+        $binaries = NpmRuntime::npmBinaryCandidates();
+        $resolved = NpmRuntime::resolvedBinary();
 
-        foreach (NpmRuntime::npmBinaryCandidates() as $binary) {
+        if ($resolved !== null) {
+            array_unshift($binaries, $resolved);
+        }
+
+        foreach ($binaries as $binary) {
             $command = array_merge($binary, $arguments);
             $label = implode(' ', $binary);
 
